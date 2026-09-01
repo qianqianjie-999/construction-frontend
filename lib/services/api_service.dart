@@ -1,0 +1,182 @@
+import 'dart:io';
+import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
+import 'package:image_picker/image_picker.dart';
+import '../models/project.dart';
+import '../models/construction_log.dart';
+
+class ApiService {
+  // API 基础 URL - 通过环境变量配置
+  // 开发环境：http://localhost:5000
+  // 生产环境：请替换为实际服务器地址
+  static const String _defaultBaseUrl = String.fromEnvironment(
+    'API_BASE_URL',
+    defaultValue: 'http://localhost:5000',
+  );
+
+  final Dio _dio;
+
+  // 单例模式
+  static final ApiService _instance = ApiService._internal();
+
+  factory ApiService() {
+    return _instance;
+  }
+
+  ApiService._internal() : _dio = Dio() {
+    _dio.options.baseUrl = _defaultBaseUrl;
+    _dio.options.connectTimeout = const Duration(seconds: 30);
+    _dio.options.receiveTimeout = const Duration(seconds: 30);
+
+    // 添加日志拦截器
+    _dio.interceptors.add(LogInterceptor(
+      request: true,
+      requestBody: true,
+      responseBody: true,
+      error: true,
+      logPrint: kDebugMode ? print : (obj) {},
+    ));
+
+    // 添加错误处理拦截器
+    _dio.interceptors.add(InterceptorsWrapper(
+      onError: (error, handler) {
+        if (error.response?.statusCode == 401) {
+          // TODO: 处理未授权情况（如跳转到登录页）
+        }
+        return handler.next(error);
+      },
+    ));
+  }
+
+  Future<List<Project>> getProjects() async {
+    try {
+      final response = await _dio.get('/api/projects');
+      return (response.data as List)
+          .map((e) => Project.fromJson(e))
+          .toList();
+    } catch (e) {
+      print('Error fetching projects: $e');
+      rethrow;
+    }
+  }
+
+  Future<List<ConstructionLog>> getLogsByProject(int projectId) async {
+    try {
+      final response = await _dio.get('/api/logs', queryParameters: {'project_id': projectId});
+      return (response.data as List)
+          .map((e) => ConstructionLog.fromJson(e))
+          .toList();
+    } catch (e) {
+      print('Error fetching logs: $e');
+      rethrow;
+    }
+  }
+
+  Future<void> createLog(ConstructionLog log, List<dynamic> photos, List<dynamic> certificates) async {
+    try {
+      final formData = FormData();
+
+      // 添加日志的文本数据
+      formData.fields.add(MapEntry('project_id', log.projectId.toString()));
+      formData.fields.add(MapEntry('date', log.dateStr));
+      formData.fields.add(MapEntry('weather', log.weather));
+      formData.fields.add(MapEntry('temperature', log.temperature));
+      formData.fields.add(MapEntry('wind_force', log.windForce));
+      formData.fields.add(MapEntry('wind_direction', log.windDirection));
+      formData.fields.add(MapEntry('construction_part', log.constructionPart));
+      formData.fields.add(MapEntry('construction_content', log.constructionContent));
+      formData.fields.add(MapEntry('progress', log.progress));
+      formData.fields.add(MapEntry('construction_record', log.constructionRecord));
+      formData.fields.add(MapEntry('technical_safety_record', log.technicalSafetyRecord));
+      formData.fields.add(MapEntry('material_record', log.materialRecord));
+      formData.fields.add(MapEntry('project_manager', log.projectManager));
+      formData.fields.add(MapEntry('recorder', log.recorder));
+
+      // 添加现场照片
+      for (var i = 0; i < photos.length; i++) {
+        if (kIsWeb) {
+          // Web: XFile - 需要先读取字节
+          final xFile = photos[i] as XFile;
+          final bytes = await xFile.readAsBytes();
+          formData.files.add(MapEntry(
+            'photos',
+            MultipartFile.fromBytes(
+              bytes,
+              filename: 'photo_$i.jpg',
+            ),
+          ));
+        } else {
+          // Mobile: File
+          final file = photos[i] as File;
+          formData.files.add(MapEntry(
+            'photos',
+            await MultipartFile.fromFile(file.path, filename: 'photo_$i.jpg'),
+          ));
+        }
+      }
+
+      // 添加合格证照片
+      for (var i = 0; i < certificates.length; i++) {
+        if (kIsWeb) {
+          final xFile = certificates[i] as XFile;
+          final bytes = await xFile.readAsBytes();
+          formData.files.add(MapEntry(
+            'certificates',
+            MultipartFile.fromBytes(bytes, filename: 'cert_$i.jpg'),
+          ));
+        } else {
+          final file = certificates[i] as File;
+          formData.files.add(MapEntry(
+            'certificates',
+            await MultipartFile.fromFile(file.path, filename: 'cert_$i.jpg'),
+          ));
+        }
+      }
+
+      await _dio.post('/api/logs', data: formData);
+    } catch (e) {
+      print('Error uploading log: $e');
+      rethrow;
+    }
+  }
+
+  // 获取单例实例
+  static ApiService get instance => _instance;
+
+  /// 暴露 dio 给其他服务使用
+  Dio get dio => _dio;
+
+  /// 暴露 baseUrl
+  String get baseUrl => _defaultBaseUrl;
+
+  /// 设置/清除认证 token
+  void setAuthToken(String? token) {
+    if (token == null) {
+      _dio.options.headers.remove('Authorization');
+    } else {
+      _dio.options.headers['Authorization'] = 'Bearer $token';
+    }
+  }
+
+  // 导出施工日志
+  Future<Uint8List> exportLogs(int projectId, String format) async {
+    try {
+      final response = await _dio.get(
+        '/api/export/logs',
+        queryParameters: {
+          'project_id': projectId,
+          'format': format, // 'pdf' 或 'excel'
+        },
+        options: Options(
+          responseType: ResponseType.bytes,
+        ),
+      );
+      return response.data;
+    } catch (e) {
+      print('Error exporting logs: $e');
+      rethrow;
+    }
+  }
+
+  // 移除 dispose 方法，单例模式下不需要
+}

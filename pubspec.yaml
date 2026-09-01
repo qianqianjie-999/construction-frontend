@@ -1,0 +1,47 @@
+name: construction_app
+description: "工程现场管理 App"
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  cupertino_icons: ^1.0.2
+
+  # 网络请求
+  dio: ^5.4.0
+
+  # 状态管理
+  provider: ^6.1.1
+
+  # 相机和图片选择
+  image_picker: ^1.0.4
+
+  # 地理位置
+  geolocator: ^12.0.0
+
+  # 路径提供
+  path_provider: ^2.1.1
+
+  # 图片处理 (用于加水印)
+  image: ^4.0.17
+
+  # 日期格式化
+  intl: ^0.18.0
+
+  # Socket.IO 客户端（聊天功能）
+  socket_io_client: ^2.0.3+1
+
+  # 本地存储（保存登录态）
+  shared_preferences: ^2.2.2
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^2.0.0
+
+flutter:
+  uses-material-design: true

@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base href="$FLUTTER_BASE_HREF">
+
+  <meta charset="UTF-8">
+  <meta content="IE=Edge" http-equiv="X-UA-Compatible">
+  <meta name="description" content="工程现场管理 App">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black">
+  <meta name="apple-mobile-web-app-title" content="工程现场管理">
+  <link rel="apple-touch-icon" href="icons/Icon-192.png">
+
+  <link rel="icon" type="image/png" href="favicon.png"/>
+
+  <title>工程现场管理</title>
+  <link rel="manifest" href="manifest.json">
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+
+  <script>
+    // The value below is injected by flutter build, do not touch.
+    const serviceWorkerVersion = null;
+  </script>
+  <script src="flutter.js" defer></script>
+  <style>
+    body {
+      margin: 0;
+      padding: 0;
+      background: #1a1a2e;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+    }
+    .flutter-container {
+      width: 100%;
+      max-width: 420px;
+      height: 100vh;
+      max-height: 920px;
+      background: #ffffff;
+      box-shadow: 0 0 50px rgba(0,0,0,0.5);
+    }
+    @media (max-width: 480px) {
+      body {
+        background: #ffffff;
+      }
+      .flutter-container {
+        max-width: 100%;
+        max-height: 100vh;
+        box-shadow: none;
+      }
+    }
+    .loading {
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      height: 100%;
+      background: #ffffff;
+      color: #666;
+    }
+    .loading h1 {
+      margin-top: 20px;
+      font-size: 18px;
+      color: #1976d2;
+    }
+  </style>
+</head>
+<body>
+  <div class="flutter-container">
+    <div class="loading" id="loading">
+      <svg width="50" height="50" viewBox="0 0 50 50">
+        <circle cx="25" cy="25" r="20" fill="none" stroke="#e0e0e0" stroke-width="4"/>
+        <path d="M25 5 A20 20 0 0 1 45 25" fill="none" stroke="#1976d2" stroke-width="4">
+          <animateTransform attributeName="transform" type="rotate" from="0 25 25" to="360 25 25" dur="1s" repeatCount="indefinite"/>
+        </path>
+      </svg>
+      <h1>加载中...</h1>
+    </div>
+    <script>
+      window.addEventListener('load', function(ev) {
+        _flutter.loader.loadEntrypoint({
+          serviceWorker: {
+            serviceWorkerVersion: serviceWorkerVersion,
+          },
+          onEntrypointLoaded: function(engineInitializer) {
+            engineInitializer.initializeEngine().then(function(appRunner) {
+              appRunner.runApp();
+              document.getElementById('loading').style.display = 'none';
+            });
+          }
+        });
+      });
+    </script>
+  </div>
+</body>
+</html>
