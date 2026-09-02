@@ -57,7 +57,7 @@ class ApiService {
           .map((e) => Project.fromJson(e))
           .toList();
     } catch (e) {
-      print('Error fetching projects: $e');
+      debugPrint('Error fetching projects: $e');
       rethrow;
     }
   }
@@ -69,7 +69,7 @@ class ApiService {
           .map((e) => ConstructionLog.fromJson(e))
           .toList();
     } catch (e) {
-      print('Error fetching logs: $e');
+      debugPrint('Error fetching logs: $e');
       rethrow;
     }
   }
@@ -137,7 +137,7 @@ class ApiService {
 
       await _dio.post('/api/logs', data: formData);
     } catch (e) {
-      print('Error uploading log: $e');
+      debugPrint('Error uploading log: $e');
       rethrow;
     }
   }
@@ -187,7 +187,7 @@ class ApiService {
       );
       return response.data;
     } catch (e) {
-      print('Error exporting logs: $e');
+      debugPrint('Error exporting logs: $e');
       rethrow;
     }
   }

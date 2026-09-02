@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'dart:typed_data';
+import 'package:flutter/foundation.dart';
 import 'package:image/image.dart' as img;
 import 'package:image_picker/image_picker.dart';
 
@@ -43,7 +44,7 @@ class WatermarkService {
       final compressed = _compressImage(image);
       return img.encodeJpg(compressed, quality: 70);
     } catch (e) {
-      print('Error compressing bytes: $e');
+      debugPrint('Error compressing bytes: $e');
       return bytes;
     }
   }
@@ -71,7 +72,7 @@ class WatermarkService {
 
       return outputFile;
     } catch (e) {
-      print('Error adding watermark: $e');
+      debugPrint('Error adding watermark: $e');
       return imageFile; // 出错时返回原图
     }
   }
@@ -102,7 +103,7 @@ class WatermarkService {
 
       return XFile(tempFile.path);
     } catch (e) {
-      print('Error adding watermark to XFile: $e');
+      debugPrint('Error adding watermark to XFile: $e');
       return xFile; // 出错时返回原图
     }
   }
