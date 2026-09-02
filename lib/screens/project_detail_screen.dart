@@ -28,40 +28,54 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
       body: CustomScrollView(
         slivers: [
           SliverAppBar(
-            expandedHeight: 160,
+            expandedHeight: 140,
             floating: false,
             pinned: true,
-            backgroundColor: const Color(0xFF1a2332),
+            backgroundColor: const Color(0xFF0B1220),
+            surfaceTintColor: Colors.transparent,
             flexibleSpace: FlexibleSpaceBar(
-              title: Text(widget.project.name, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: Color(0xFFf1f5f9))),
+              collapseMode: CollapseMode.pin,
               background: Container(
                 decoration: const BoxDecoration(
                   gradient: LinearGradient(
                     begin: Alignment.topLeft,
                     end: Alignment.bottomRight,
-                    colors: [Color(0xFF0a0f1a), Color(0xFF1a2332)],
+                    colors: [Color(0xFF0B1220), Color(0xFF151E2E)],
                   ),
                 ),
                 child: SafeArea(
                   child: Padding(
-                    padding: const EdgeInsets.all(20),
+                    padding: const EdgeInsets.only(left: 20, right: 20, top: 50, bottom: 16),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisAlignment: MainAxisAlignment.end,
                       children: [
-                        const SizedBox(height: 30),
                         Row(
                           children: [
-                            const Icon(Icons.location_on, color: Color(0xFF94a3b8), size: 16),
-                            const SizedBox(width: 4),
-                            Expanded(child: Text(widget.project.location.isEmpty ? '未填写地点' : widget.project.location, style: const TextStyle(color: Color(0xFF94a3b8), fontSize: 13))),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFF00D4FF).withOpacity(0.12),
+                                borderRadius: BorderRadius.circular(6),
+                              ),
+                              child: const Text('项目详情', style: TextStyle(color: Color(0xFF00D4FF), fontSize: 11, fontWeight: FontWeight.w600)),
+                            ),
                           ],
                         ),
-                        const SizedBox(height: 4),
+                        const SizedBox(height: 10),
                         Row(
                           children: [
-                            const Icon(Icons.business, color: Color(0xFF94a3b8), size: 16),
+                            const Icon(Icons.location_on, color: Color(0xFF94a3b8), size: 14),
                             const SizedBox(width: 4),
-                            Text(widget.project.company.isEmpty ? '未填写单位' : widget.project.company, style: const TextStyle(color: Color(0xFF94a3b8), fontSize: 13)),
+                            Expanded(child: Text(widget.project.location.isEmpty ? '未填写地点' : widget.project.location, style: const TextStyle(color: Color(0xFF94a3b8), fontSize: 12))),
+                          ],
+                        ),
+                        const SizedBox(height: 3),
+                        Row(
+                          children: [
+                            const Icon(Icons.business, color: Color(0xFF94a3b8), size: 14),
+                            const SizedBox(width: 4),
+                            Expanded(child: Text(widget.project.company.isEmpty ? '未填写单位' : widget.project.company, style: const TextStyle(color: Color(0xFF94a3b8), fontSize: 12))),
                           ],
                         ),
                       ],
@@ -75,20 +89,13 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
                 onPressed: () {
                   Navigator.pushNamed(context, '/log_form', arguments: widget.project).then((_) => setState(() => _logsFuture = ApiService().getLogsByProject(widget.project.id)));
                 },
-                icon: const Icon(Icons.add_circle_outline),
+                icon: const Icon(Icons.add_circle_outline, size: 24),
                 tooltip: '录入日志',
               ),
               IconButton(
                 onPressed: _exportLogs,
-                icon: const Icon(Icons.download),
+                icon: const Icon(Icons.download, size: 22),
                 tooltip: '导出日志',
-              ),
-              IconButton(
-                onPressed: _deleting ? null : _confirmDelete,
-                icon: _deleting
-                    ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.redAccent))
-                    : const Icon(Icons.delete_outline, color: Colors.redAccent),
-                tooltip: '删除项目',
               ),
             ],
           ),
