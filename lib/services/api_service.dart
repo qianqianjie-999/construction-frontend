@@ -6,15 +6,17 @@ import '../models/project.dart';
 import '../models/construction_log.dart';
 
 class ApiService {
-  // API 基础 URL - 通过环境变量配置
-  // 开发环境：http://localhost:5000
-  // 生产环境：请替换为实际服务器地址
+  // 默认 API 基础 URL
+  // 优先级：运行时 setBaseUrl() > 编译期 --dart-define=API_BASE_URL > 默认 localhost
   static const String _defaultBaseUrl = String.fromEnvironment(
     'API_BASE_URL',
     defaultValue: 'http://localhost:5000',
   );
 
   final Dio _dio;
+
+  // 运行时地址（登录页可修改）
+  String _baseUrl = _defaultBaseUrl;
 
   // 单例模式
   static final ApiService _instance = ApiService._internal();
@@ -24,7 +26,7 @@ class ApiService {
   }
 
   ApiService._internal() : _dio = Dio() {
-    _dio.options.baseUrl = _defaultBaseUrl;
+    _dio.options.baseUrl = _baseUrl;
     _dio.options.connectTimeout = const Duration(seconds: 30);
     _dio.options.receiveTimeout = const Duration(seconds: 30);
 
@@ -146,8 +148,20 @@ class ApiService {
   /// 暴露 dio 给其他服务使用
   Dio get dio => _dio;
 
-  /// 暴露 baseUrl
-  String get baseUrl => _defaultBaseUrl;
+  /// 当前 baseUrl（运行时地址）
+  String get baseUrl => _baseUrl;
+
+  /// 运行时设置后端服务器地址（登录页调用），自动规范格式并同步到 dio
+  void setBaseUrl(String url) {
+    var u = url.trim();
+    if (u.isEmpty) return;
+    // 去掉末尾多余的斜杠
+    while (u.endsWith('/')) {
+      u = u.substring(0, u.length - 1);
+    }
+    _baseUrl = u;
+    _dio.options.baseUrl = u;
+  }
 
   /// 设置/清除认证 token
   void setAuthToken(String? token) {

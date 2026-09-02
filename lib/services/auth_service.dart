@@ -40,6 +40,7 @@ class AuthService {
   AuthService._internal();
 
   static const String _keyUser = 'current_user';
+  static const String _keyBaseUrl = 'api_base_url';
 
   AppUser? _currentUser;
   AppUser? get currentUser => _currentUser;
@@ -48,6 +49,13 @@ class AuthService {
   /// 启动时从本地存储恢复登录态
   Future<bool> restoreLogin() async {
     final prefs = await SharedPreferences.getInstance();
+
+    // 先恢复服务器地址
+    final savedUrl = prefs.getString(_keyBaseUrl);
+    if (savedUrl != null && savedUrl.isNotEmpty) {
+      ApiService.instance.setBaseUrl(savedUrl);
+    }
+
     final str = prefs.getString(_keyUser);
     if (str == null) return false;
     try {
@@ -59,6 +67,19 @@ class AuthService {
     } catch (_) {
       return false;
     }
+  }
+
+  /// 保存服务器地址（登录页修改后调用）
+  Future<void> saveBaseUrl(String url) async {
+    ApiService.instance.setBaseUrl(url);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_keyBaseUrl, ApiService.instance.baseUrl);
+  }
+
+  /// 读取已保存的服务器地址，没有则返回当前 baseUrl
+  Future<String> getBaseUrl() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString(_keyBaseUrl) ?? ApiService.instance.baseUrl;
   }
 
   /// 登录

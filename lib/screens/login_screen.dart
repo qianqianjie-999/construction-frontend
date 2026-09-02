@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../services/auth_service.dart';
+import '../services/api_service.dart';
 import 'project_list_screen.dart';
 
 /// 登录页面
@@ -14,13 +15,28 @@ class _LoginScreenState extends State<LoginScreen> {
   final _formKey = GlobalKey<FormState>();
   final _usernameController = TextEditingController();
   final _passwordController = TextEditingController();
+  final _serverController = TextEditingController();
   bool _loading = false;
   String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadServer();
+  }
+
+  Future<void> _loadServer() async {
+    final saved = await AuthService().getBaseUrl();
+    if (mounted) {
+      _serverController.text = saved;
+    }
+  }
 
   @override
   void dispose() {
     _usernameController.dispose();
     _passwordController.dispose();
+    _serverController.dispose();
     super.dispose();
   }
 
@@ -31,6 +47,8 @@ class _LoginScreenState extends State<LoginScreen> {
       _error = null;
     });
     try {
+      // 先应用服务器地址，再登录
+      await AuthService().saveBaseUrl(_serverController.text.trim());
       await AuthService().login(
         _usernameController.text.trim(),
         _passwordController.text,
@@ -41,7 +59,7 @@ class _LoginScreenState extends State<LoginScreen> {
       );
     } catch (e) {
       setState(() {
-        _error = '登录失败：用户名或密码错误';
+        _error = '登录失败：请检查服务器地址、用户名或密码';
       });
     } finally {
       if (mounted) {
@@ -79,8 +97,24 @@ class _LoginScreenState extends State<LoginScreen> {
                 ),
                 const SizedBox(height: 32),
                 TextFormField(
+                  controller: _serverController,
+                  decoration: _inputDecoration('服务器地址', icon: Icons.dns_outlined),
+                  keyboardType: TextInputType.url,
+                  style: const TextStyle(color: Color(0xFFf1f5f9)),
+                  validator: (v) {
+                    final s = (v ?? '').trim();
+                    if (s.isEmpty) return '请输入服务器地址';
+                    final uri = Uri.tryParse(s);
+                    if (uri == null || !(uri.hasScheme && uri.host.isNotEmpty)) {
+                      return '地址格式不正确，如 http://192.168.1.100:5000';
+                    }
+                    return null;
+                  },
+                ),
+                const SizedBox(height: 16),
+                TextFormField(
                   controller: _usernameController,
-                  decoration: _inputDecoration('用户名'),
+                  decoration: _inputDecoration('用户名', icon: Icons.person_outline),
                   style: const TextStyle(color: Color(0xFFf1f5f9)),
                   validator: (v) => (v == null || v.trim().isEmpty) ? '请输入用户名' : null,
                 ),
@@ -88,7 +122,7 @@ class _LoginScreenState extends State<LoginScreen> {
                 TextFormField(
                   controller: _passwordController,
                   obscureText: true,
-                  decoration: _inputDecoration('密码'),
+                  decoration: _inputDecoration('密码', icon: Icons.lock_outline),
                   style: const TextStyle(color: Color(0xFFf1f5f9)),
                   validator: (v) => (v == null || v.isEmpty) ? '请输入密码' : null,
                 ),
@@ -141,9 +175,10 @@ class _LoginScreenState extends State<LoginScreen> {
     );
   }
 
-  InputDecoration _inputDecoration(String label) {
+  InputDecoration _inputDecoration(String label, {IconData? icon}) {
     return InputDecoration(
       labelText: label,
+      prefixIcon: icon != null ? Icon(icon, color: const Color(0xFF64748b)) : null,
       labelStyle: const TextStyle(color: Color(0xFF94a3b8)),
       filled: true,
       fillColor: const Color(0xFF1a2332),

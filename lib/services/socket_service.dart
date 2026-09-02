@@ -28,11 +28,14 @@ class SocketService {
     if (user == null) return;
 
     final base = ApiService.instance.baseUrl;
-    // 去掉 http/https 前缀，拼接 socket url
-    final uri = base.replaceFirst(RegExp(r'^https?://'), '');
+
+    // 去掉 http/https 前缀，得到 host:port，并推导出正确的 ws/wss 协议
+    var uri = base.replaceFirst(RegExp(r'^https?://'), '');
+    final isHttps = base.startsWith('https://');
+    final proto = isHttps ? 'https' : 'http';
 
     _socket = IO.io(
-      'http://$uri',
+      '$proto://$uri',
       IO.OptionBuilder()
           .setTransports(['polling'])  // Werkzeug 开发服务器不支持 websocket，使用 polling
           .disableAutoConnect()
