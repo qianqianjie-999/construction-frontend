@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:dio/dio.dart';
+import 'package:construction_app/main.dart' show AppColors;
 import '../services/auth_service.dart';
 import '../services/api_service.dart';
 import 'project_list_screen.dart';
@@ -11,12 +13,13 @@ class LoginScreen extends StatefulWidget {
   State<LoginScreen> createState() => _LoginScreenState();
 }
 
-class _LoginScreenState extends State<LoginScreen> {
+class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStateMixin {
   final _formKey = GlobalKey<FormState>();
   final _usernameController = TextEditingController();
   final _passwordController = TextEditingController();
   final _serverController = TextEditingController();
   bool _loading = false;
+  bool _obscurePassword = true;
   String? _error;
 
   @override
@@ -47,7 +50,6 @@ class _LoginScreenState extends State<LoginScreen> {
       _error = null;
     });
     try {
-      // 先应用服务器地址，再登录
       await AuthService().saveBaseUrl(_serverController.text.trim());
       await AuthService().login(
         _usernameController.text.trim(),
@@ -58,8 +60,16 @@ class _LoginScreenState extends State<LoginScreen> {
         MaterialPageRoute(builder: (_) => const ProjectListScreen()),
       );
     } catch (e) {
+      String detail = e.toString();
+      if (e is DioException) {
+        if (e.response != null) {
+          detail = 'HTTP ${e.response!.statusCode}: ${e.response!.data}';
+        } else {
+          detail = '${e.type.name}: ${e.message}';
+        }
+      }
       setState(() {
-        _error = '登录失败：请检查服务器地址、用户名或密码';
+        _error = '登录失败: $detail';
       });
     } finally {
       if (mounted) {
@@ -71,103 +81,30 @@ class _LoginScreenState extends State<LoginScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF0a0f1a),
-      body: Center(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(32),
-          child: Form(
-            key: _formKey,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Icon(Icons.engineering, size: 80, color: Color(0xFF00d4ff)),
-                const SizedBox(height: 16),
-                const Text(
-                  '施工日志管理',
-                  style: TextStyle(
-                    color: Color(0xFFf1f5f9),
-                    fontSize: 24,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                const Text(
-                  '请登录以继续',
-                  style: TextStyle(color: Color(0xFF94a3b8), fontSize: 14),
-                ),
-                const SizedBox(height: 32),
-                TextFormField(
-                  controller: _serverController,
-                  decoration: _inputDecoration('服务器地址', icon: Icons.dns_outlined),
-                  keyboardType: TextInputType.url,
-                  style: const TextStyle(color: Color(0xFFf1f5f9)),
-                  validator: (v) {
-                    final s = (v ?? '').trim();
-                    if (s.isEmpty) return '请输入服务器地址';
-                    final uri = Uri.tryParse(s);
-                    if (uri == null || !(uri.hasScheme && uri.host.isNotEmpty)) {
-                      return '地址格式不正确，如 http://192.168.1.100:5000';
-                    }
-                    return null;
-                  },
-                ),
-                const SizedBox(height: 16),
-                TextFormField(
-                  controller: _usernameController,
-                  decoration: _inputDecoration('用户名', icon: Icons.person_outline),
-                  style: const TextStyle(color: Color(0xFFf1f5f9)),
-                  validator: (v) => (v == null || v.trim().isEmpty) ? '请输入用户名' : null,
-                ),
-                const SizedBox(height: 16),
-                TextFormField(
-                  controller: _passwordController,
-                  obscureText: true,
-                  decoration: _inputDecoration('密码', icon: Icons.lock_outline),
-                  style: const TextStyle(color: Color(0xFFf1f5f9)),
-                  validator: (v) => (v == null || v.isEmpty) ? '请输入密码' : null,
-                ),
-                if (_error != null) ...[
-                  const SizedBox(height: 12),
-                  Text(_error!, style: const TextStyle(color: Colors.redAccent, fontSize: 13)),
+      body: Container(
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [AppColors.background, Color(0xFF111B2F)],
+          ),
+        ),
+        child: SafeArea(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 20),
+            child: Form(
+              key: _formKey,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const SizedBox(height: 30),
+                  _buildHeader(),
+                  const SizedBox(height: 32),
+                  _buildFormCard(),
+                  const SizedBox(height: 24),
+                  _buildHintCard(),
                 ],
-                const SizedBox(height: 24),
-                SizedBox(
-                  width: double.infinity,
-                  height: 48,
-                  child: ElevatedButton(
-                    onPressed: _loading ? null : _submit,
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF00d4ff),
-                      foregroundColor: const Color(0xFF0a0f1a),
-                    ),
-                    child: _loading
-                        ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
-                        : const Text('登录', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-                  ),
-                ),
-                const SizedBox(height: 12),
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF1a2332),
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: const Color(0xFF00d4ff).withOpacity(0.3)),
-                  ),
-                  child: const Column(
-                    children: [
-                      Text(
-                        '默认管理员：admin / admin123',
-                        style: TextStyle(color: Color(0xFF94a3b8), fontSize: 12),
-                      ),
-                      SizedBox(height: 4),
-                      Text(
-                        '账号由管理员在后台分配',
-                        style: TextStyle(color: Color(0xFF64748b), fontSize: 11),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
+              ),
             ),
           ),
         ),
@@ -175,20 +112,194 @@ class _LoginScreenState extends State<LoginScreen> {
     );
   }
 
-  InputDecoration _inputDecoration(String label, {IconData? icon}) {
-    return InputDecoration(
-      labelText: label,
-      prefixIcon: icon != null ? Icon(icon, color: const Color(0xFF64748b)) : null,
-      labelStyle: const TextStyle(color: Color(0xFF94a3b8)),
-      filled: true,
-      fillColor: const Color(0xFF1a2332),
-      enabledBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(8),
-        borderSide: const BorderSide(color: Color(0xFF334155)),
+  Widget _buildHeader() {
+    return Column(
+      children: [
+        // 渐变图标容器
+        Container(
+          width: 96,
+          height: 96,
+          decoration: BoxDecoration(
+            gradient: const LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [Color(0xFF00d4ff), Color(0xFF0066aa)],
+            ),
+            borderRadius: BorderRadius.circular(28),
+            boxShadow: [
+              BoxShadow(
+                color: const Color(0xFF00d4ff).withOpacity(0.4),
+                blurRadius: 30,
+                offset: const Offset(0, 10),
+              ),
+            ],
+          ),
+          child: const Icon(Icons.construction, size: 52, color: Colors.white),
+        ),
+        const SizedBox(height: 20),
+        const Text(
+          '施工日志管理',
+          style: TextStyle(
+            color: AppColors.text,
+            fontSize: 26,
+            fontWeight: FontWeight.w800,
+            letterSpacing: 1.2,
+          ),
+        ),
+        const SizedBox(height: 6),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+          decoration: BoxDecoration(
+            color: AppColors.primary.withOpacity(0.15),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: const Text(
+            '请登录以继续',
+            style: TextStyle(color: AppColors.primary, fontSize: 13, fontWeight: FontWeight.w500),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildFormCard() {
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: AppColors.card,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: AppColors.border),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.3),
+            blurRadius: 40,
+            offset: const Offset(0, 10),
+          ),
+        ],
       ),
-      focusedBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(8),
-        borderSide: const BorderSide(color: Color(0xFF00d4ff)),
+      child: Column(
+        children: [
+          _buildField('服务器地址', Icons.dns_outlined, _serverController,
+            keyboardType: TextInputType.url,
+            validator: (v) {
+              final s = (v ?? '').trim();
+              if (s.isEmpty) return '请输入服务器地址';
+              final uri = Uri.tryParse(s);
+              if (uri == null || !(uri.hasScheme && uri.host.isNotEmpty)) {
+                return '地址格式：https://IP:9304';
+              }
+              return null;
+            }),
+          const SizedBox(height: 16),
+          _buildField('用户名', Icons.person_outline, _usernameController,
+            validator: (v) => (v == null || v.trim().isEmpty) ? '请输入用户名' : null),
+          const SizedBox(height: 16),
+          _buildPasswordField(),
+          if (_error != null) ...[
+            const SizedBox(height: 16),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              decoration: BoxDecoration(
+                color: AppColors.danger.withOpacity(0.15),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: AppColors.danger.withOpacity(0.3)),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.error_outline, color: AppColors.danger, size: 18),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(_error!, style: const TextStyle(color: AppColors.danger, fontSize: 12), overflow: TextOverflow.visible),
+                  ),
+                ],
+              ),
+            ),
+          ],
+          const SizedBox(height: 20),
+          SizedBox(
+            width: double.infinity,
+            height: 52,
+            child: ElevatedButton.icon(
+              onPressed: _loading ? null : _submit,
+              icon: _loading
+                  ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.background))
+                  : const Icon(Icons.lock_open, size: 20),
+              label: const Text('登 录', style: TextStyle(fontSize: 16)),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildField(String label, IconData icon, TextEditingController controller, {
+    TextInputType? keyboardType,
+    String? Function(String?)? validator,
+  }) {
+    return TextFormField(
+      controller: controller,
+      keyboardType: keyboardType,
+      validator: validator,
+      style: const TextStyle(color: AppColors.text),
+      decoration: InputDecoration(
+        labelText: label,
+        prefixIcon: Icon(icon, color: AppColors.textMuted, size: 20),
+        prefixIconConstraints: const BoxConstraints(minWidth: 44),
+      ),
+    );
+  }
+
+  Widget _buildPasswordField() {
+    return TextFormField(
+      controller: _passwordController,
+      obscureText: _obscurePassword,
+      validator: (v) => (v == null || v.isEmpty) ? '请输入密码' : null,
+      style: const TextStyle(color: AppColors.text),
+      decoration: InputDecoration(
+        labelText: '密码',
+        prefixIcon: const Icon(Icons.lock_outline, color: AppColors.textMuted, size: 20),
+        prefixIconConstraints: const BoxConstraints(minWidth: 44),
+        suffixIcon: IconButton(
+          icon: Icon(
+            _obscurePassword ? Icons.visibility_off_outlined : Icons.visibility_outlined,
+            color: AppColors.textMuted,
+          ),
+          onPressed: () => setState(() => _obscurePassword = !_obscurePassword),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildHintCard() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      decoration: BoxDecoration(
+        color: AppColors.card,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: AppColors.primary.withOpacity(0.15),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: const Icon(Icons.info_outline, color: AppColors.primary, size: 16),
+          ),
+          const SizedBox(width: 12),
+          const Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('默认管理员', style: TextStyle(color: AppColors.textSub, fontSize: 12)),
+                SizedBox(height: 2),
+                Text('admin / admin123', style: TextStyle(color: AppColors.primary, fontSize: 13, fontWeight: FontWeight.w600)),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }

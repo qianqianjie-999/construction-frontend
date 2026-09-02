@@ -14,6 +14,7 @@ class ProjectDetailScreen extends StatefulWidget {
 
 class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
   Future<List<ConstructionLog>>? _logsFuture;
+  bool _deleting = false;
 
   @override
   void initState() {
@@ -81,6 +82,13 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
                 onPressed: _exportLogs,
                 icon: const Icon(Icons.download),
                 tooltip: '导出日志',
+              ),
+              IconButton(
+                onPressed: _deleting ? null : _confirmDelete,
+                icon: _deleting
+                    ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.redAccent))
+                    : const Icon(Icons.delete_outline, color: Colors.redAccent),
+                tooltip: '删除项目',
               ),
             ],
           ),
@@ -249,6 +257,59 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
       case '大雨': return Colors.blue;
       case '雪': return Colors.lightBlue;
       default: return const Color(0xFF2196F3);
+    }
+  }
+
+  void _confirmDelete() {
+    showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        backgroundColor: const Color(0xFF1a2332),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Row(
+          children: [
+            Icon(Icons.warning_amber, color: Colors.redAccent, size: 28),
+            SizedBox(width: 8),
+            Text('删除项目', style: TextStyle(color: Color(0xFFf1f5f9))),
+          ],
+        ),
+        content: Text(
+          '确认删除项目「${widget.project.name}」？\n所有日志、照片、聊天记录将一并删除，此操作不可恢复！',
+          style: const TextStyle(color: Color(0xFF94a3b8)),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('取消', style: TextStyle(color: Color(0xFF94a3b8))),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.pop(context);
+              _doDelete();
+            },
+            child: const Text('删除', style: TextStyle(color: Colors.redAccent, fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _doDelete() async {
+    setState(() => _deleting = true);
+    try {
+      await ApiService().deleteProject(widget.project.id);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('项目已删除'), backgroundColor: Color(0xFF4CAF50)),
+      );
+      // 返回项目列表并刷新
+      Navigator.of(context).pop();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('删除失败：$e'), backgroundColor: const Color(0xFFef4444)),
+      );
+      setState(() => _deleting = false);
     }
   }
 

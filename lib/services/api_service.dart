@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'package:dio/dio.dart';
+import 'package:dio/io.dart';
 import 'package:flutter/foundation.dart';
 import 'package:image_picker/image_picker.dart';
 import '../models/project.dart';
@@ -10,7 +11,7 @@ class ApiService {
   // 优先级：运行时 setBaseUrl() > 编译期 --dart-define=API_BASE_URL > 默认 localhost
   static const String _defaultBaseUrl = String.fromEnvironment(
     'API_BASE_URL',
-    defaultValue: 'http://localhost:5000',
+    defaultValue: 'https://123.57.86.80:9304',
   );
 
   final Dio _dio;
@@ -26,6 +27,16 @@ class ApiService {
   }
 
   ApiService._internal() : _dio = Dio() {
+    // 强制用 IO adapter，并忽略自签名 SSL 证书
+    final ioAdapter = IOHttpClientAdapter();
+    ioAdapter.createHttpClient = () {
+      final client = HttpClient();
+      client.badCertificateCallback = (cert, host, port) => true;
+      client.connectionTimeout = const Duration(seconds: 30);
+      return client;
+    };
+    _dio.httpClientAdapter = ioAdapter;
+
     _dio.options.baseUrl = _baseUrl;
     _dio.options.connectTimeout = const Duration(seconds: 30);
     _dio.options.receiveTimeout = const Duration(seconds: 30);
@@ -94,45 +105,24 @@ class ApiService {
       formData.fields.add(MapEntry('project_manager', log.projectManager));
       formData.fields.add(MapEntry('recorder', log.recorder));
 
-      // 添加现场照片
+      // 添加现场照片（image_picker 新版全平台都返回 XFile）
       for (var i = 0; i < photos.length; i++) {
-        if (kIsWeb) {
-          // Web: XFile - 需要先读取字节
-          final xFile = photos[i] as XFile;
-          final bytes = await xFile.readAsBytes();
-          formData.files.add(MapEntry(
-            'photos',
-            MultipartFile.fromBytes(
-              bytes,
-              filename: 'photo_$i.jpg',
-            ),
-          ));
-        } else {
-          // Mobile: File
-          final file = photos[i] as File;
-          formData.files.add(MapEntry(
-            'photos',
-            await MultipartFile.fromFile(file.path, filename: 'photo_$i.jpg'),
-          ));
-        }
+        final xFile = photos[i] as XFile;
+        final bytes = await xFile.readAsBytes();
+        formData.files.add(MapEntry(
+          'photos',
+          MultipartFile.fromBytes(bytes, filename: xFile.name),
+        ));
       }
 
       // 添加合格证照片
       for (var i = 0; i < certificates.length; i++) {
-        if (kIsWeb) {
-          final xFile = certificates[i] as XFile;
-          final bytes = await xFile.readAsBytes();
-          formData.files.add(MapEntry(
-            'certificates',
-            MultipartFile.fromBytes(bytes, filename: 'cert_$i.jpg'),
-          ));
-        } else {
-          final file = certificates[i] as File;
-          formData.files.add(MapEntry(
-            'certificates',
-            await MultipartFile.fromFile(file.path, filename: 'cert_$i.jpg'),
-          ));
-        }
+        final xFile = certificates[i] as XFile;
+        final bytes = await xFile.readAsBytes();
+        formData.files.add(MapEntry(
+          'certificates',
+          MultipartFile.fromBytes(bytes, filename: xFile.name),
+        ));
       }
 
       await _dio.post('/api/logs', data: formData);
@@ -169,6 +159,16 @@ class ApiService {
       _dio.options.headers.remove('Authorization');
     } else {
       _dio.options.headers['Authorization'] = 'Bearer $token';
+    }
+  }
+
+  // 删除项目
+  Future<void> deleteProject(int projectId) async {
+    try {
+      await _dio.delete('/api/projects/$projectId');
+    } catch (e) {
+      debugPrint('Error deleting project: $e');
+      rethrow;
     }
   }
 

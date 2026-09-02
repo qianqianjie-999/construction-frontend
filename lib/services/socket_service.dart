@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:socket_io_client/socket_io_client.dart' as IO;
 import 'api_service.dart';
 import 'auth_service.dart';
@@ -22,7 +23,7 @@ class SocketService {
   final Set<ErrorHandler> _errorHandlers = {};
 
   /// 连接 Socket.IO
-  void connect() {
+  void connect() async {
     if (_socket != null) return;
     final user = AuthService().currentUser;
     if (user == null) return;
@@ -32,41 +33,53 @@ class SocketService {
     // 去掉 http/https 前缀，得到 host:port，并推导出正确的 ws/wss 协议
     var uri = base.replaceFirst(RegExp(r'^https?://'), '');
     final isHttps = base.startsWith('https://');
-    final proto = isHttps ? 'https' : 'http';
+    final proto = isHttps ? 'wss' : 'ws';
+
+    final wsUrl = '$proto://$uri';
+    debugPrint('Socket.IO 连接: $wsUrl (token=${user.token!.substring(0, 8)}...)');
 
     _socket = IO.io(
-      '$proto://$uri',
+      wsUrl,
       IO.OptionBuilder()
-          .setTransports(['polling'])  // Werkzeug 开发服务器不支持 websocket，使用 polling
+          .setTransports(['websocket'])  // Android 只支持 WebSocket
           .disableAutoConnect()
           .setExtraHeaders({'Authorization': 'Bearer ${user.token}'})
+          .enableForceNewConnection()
           .build(),
     );
 
     _socket!.onConnect((_) {
       _connected = true;
+      debugPrint('Socket.IO 连接成功！');
       for (final h in _connectHandlers.toList()) {
         h();
       }
     });
 
-    _socket!.onDisconnect((_) {
+    _socket!.onDisconnect((reason) {
       _connected = false;
+      debugPrint('Socket.IO 断开: $reason');
       for (final h in _disconnectHandlers.toList()) {
         h();
       }
     });
 
     _socket!.onConnectError((err) {
+      debugPrint('Socket.IO connectError: $err');
       for (final h in _errorHandlers.toList()) {
-        h('connect_error: $err');
+        h('连接失败: $err');
       }
     });
 
     _socket!.onError((err) {
+      debugPrint('Socket.IO error: $err');
       for (final h in _errorHandlers.toList()) {
-        h('error: $err');
+        h('错误: $err');
       }
+    });
+
+    _socket!.on('connect_error', (data) {
+      debugPrint('Socket.IO server connect_error: $data');
     });
 
     // 服务端 emit('receive_message', msg)

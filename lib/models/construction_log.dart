@@ -1,3 +1,5 @@
+import '../services/api_service.dart';
+
 class ConstructionLog {
   final int? id; // 上传后由服务器分配
   final int projectId;
@@ -110,6 +112,6 @@ class LogPhoto {
   String get fullUrl {
     if (url.isEmpty) return '';
     if (url.startsWith('http')) return url;
-    return 'http://localhost:5000$url';
+    return '${ApiService.instance.baseUrl}$url';
   }
 }

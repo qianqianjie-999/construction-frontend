@@ -133,13 +133,9 @@ class _LogFormScreenState extends State<LogFormScreen> {
     final watermarkedPhotos = <dynamic>[];
     final watermarkService = WatermarkService();
     for (var photo in photos) {
-      if (kIsWeb) {
-        final xFile = photo as XFile;
-        watermarkedPhotos.add(await watermarkService.addWatermarkToXFile(xFile, _watermarkTextController.text));
-      } else {
-        final file = photo as File;
-        watermarkedPhotos.add(await watermarkService.addWatermark(file, _watermarkTextController.text));
-      }
+      // 新版 image_picker 全平台返回 XFile
+      final xFile = photo as XFile;
+      watermarkedPhotos.add(await watermarkService.addWatermarkToXFile(xFile, _watermarkTextController.text));
     }
     return watermarkedPhotos;
   }

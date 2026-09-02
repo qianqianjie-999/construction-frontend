@@ -84,76 +84,46 @@ class _PhotoPickerWidgetState extends State<PhotoPickerWidget> {
   }
 
   Widget _buildImage(dynamic photo, double width, double height) {
-    if (kIsWeb) {
-      // Web: XFile -> read bytes
-      final xFile = photo as XFile;
-      return FutureBuilder<Uint8List>(
-        future: xFile.readAsBytes(),
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return Container(
-              width: width,
-              height: height,
-              color: const Color(0xFF111827),
-              child: const Icon(Icons.image, color: Color(0xFF64748b)),
-            );
-          }
-          if (snapshot.hasError || !snapshot.hasData) {
-            return Container(
-              width: width,
-              height: height,
-              color: const Color(0xFF111827),
-              child: const Icon(Icons.error, color: Color(0xFFef4444)),
-            );
-          }
-          return Image.memory(
-            snapshot.data!,
-            width: width,
-            height: height,
-            fit: BoxFit.cover,
+    // 新版 image_picker 全平台返回 XFile
+    final xFile = photo as XFile;
+    return FutureBuilder<Uint8List>(
+      future: xFile.readAsBytes(),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return Container(
+            width: width, height: height,
+            color: const Color(0xFF111827),
+            child: const Icon(Icons.image, color: Color(0xFF64748b)),
           );
-        },
-      );
-    } else {
-      // Mobile: File
-      return Image.file(
-        photo as File,
-        width: width,
-        height: height,
-        fit: BoxFit.cover,
-      );
-    }
+        }
+        if (snapshot.hasError || !snapshot.hasData) {
+          return Container(
+            width: width, height: height,
+            color: const Color(0xFF111827),
+            child: const Icon(Icons.error, color: Color(0xFFef4444)),
+          );
+        }
+        return Image.memory(snapshot.data!, width: width, height: height, fit: BoxFit.cover);
+      },
+    );
   }
 
   void _previewPhoto(dynamic photo) {
-    if (kIsWeb) {
-      final xFile = photo as XFile;
-      showDialog(
-        context: context,
-        builder: (_) => Dialog(
-          child: FutureBuilder<Uint8List>(
-            future: xFile.readAsBytes(),
-            builder: (context, snapshot) {
-              if (snapshot.hasData) {
-                return InteractiveViewer(
-                  child: Image.memory(snapshot.data!),
-                );
-              }
-              return const Center(child: CircularProgressIndicator());
-            },
-          ),
+    final xFile = photo as XFile;
+    showDialog(
+      context: context,
+      builder: (_) => Dialog(
+        child: FutureBuilder<Uint8List>(
+          future: xFile.readAsBytes(),
+          builder: (context, snapshot) {
+            if (snapshot.hasData) {
+              return InteractiveViewer(child: Image.memory(snapshot.data!));
+            }
+            return const Center(child: CircularProgressIndicator());
+          },
         ),
-      );
-    } else {
-      showDialog(
-        context: context,
-        builder: (_) => Dialog(
-          child: InteractiveViewer(
-            child: Image.file(photo as File),
-          ),
-        ),
-      );
-    }
+      ),
+    );
   }
 
   @override
