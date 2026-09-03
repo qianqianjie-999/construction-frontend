@@ -5,17 +5,11 @@ import 'package:image/image.dart' as img;
 import 'package:image_picker/image_picker.dart';
 
 class WatermarkService {
-  // 单例模式
   static final WatermarkService _instance = WatermarkService._internal();
-
-  factory WatermarkService() {
-    return _instance;
-  }
-
+  factory WatermarkService() => _instance;
   WatermarkService._internal();
 
-  /// 压缩图片：限制最大边长 1280px，质量 70
-  /// 适用于 3M 低带宽场景，原图 3-5MB → 压缩后 200-400KB
+  /// 压缩图片：限制最大边长 1280px
   img.Image _compressImage(img.Image image) {
     const maxDimension = 1280;
     int width = image.width;
@@ -35,6 +29,65 @@ class WatermarkService {
     return image;
   }
 
+  /// 格式化经纬度
+  String _formatGps(double? lat, double? lng) {
+    if (lat == null || lng == null) return '';
+    String latDir = lat >= 0 ? 'N' : 'S';
+    String lngDir = lng >= 0 ? 'E' : 'W';
+    return '${lat.abs().toStringAsFixed(6)}°$latDir ${lng.abs().toStringAsFixed(6)}°$lngDir';
+  }
+
+  /// 在图片上画水印（项目名 + 日期 + 经纬度）
+  img.Image _drawWatermark(img.Image image, String text, {double? latitude, double? longitude}) {
+    final now = DateTime.now();
+    final dateStr = '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')} '
+        '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}';
+
+    final w = image.width;
+    final h = image.height;
+
+    final padding = (w * 0.015).round().clamp(8, 20);
+    final gpsStr = _formatGps(latitude, longitude);
+    final lineCount = gpsStr.isEmpty ? 2 : 3;
+    final lineH = 18;
+    final barHeight = lineH * lineCount + padding * 2;
+
+    // 画半透明黑色背景条
+    for (var y = h - barHeight - padding; y < h - padding; y++) {
+      for (var x = padding; x < w - padding; x++) {
+        if (x >= 0 && x < w && y >= 0 && y < h) {
+          final pixel = image.getPixel(x, y);
+          image.setPixel(x, y, img.ColorRgba8(
+            (pixel.r * 0.45).round(),
+            (pixel.g * 0.45).round(),
+            (pixel.b * 0.45).round(),
+            255,
+          ));
+        }
+      }
+    }
+
+    // 画文字
+    final font = img.arial14;
+    final textX = padding + 6;
+    var textY = h - barHeight - padding + padding ~/ 2;
+
+    // 第一行：项目名
+    img.drawString(image, text, font: font, x: textX, y: textY, color: img.ColorRgba8(255, 255, 255, 255));
+    textY += lineH;
+
+    // 第二行：日期时间
+    img.drawString(image, dateStr, font: font, x: textX, y: textY, color: img.ColorRgba8(220, 220, 220, 255));
+    textY += lineH;
+
+    // 第三行：经纬度（如果有）
+    if (gpsStr.isNotEmpty) {
+      img.drawString(image, gpsStr, font: font, x: textX, y: textY, color: img.ColorRgba8(0, 220, 255, 255));
+    }
+
+    return image;
+  }
+
   /// 压缩字节流（用于聊天图片上传）
   Future<List<int>> compressBytes(List<int> bytes) async {
     try {
@@ -49,62 +102,42 @@ class WatermarkService {
     }
   }
 
-  // 添加水印到图片
-  Future<File> addWatermark(
-    File imageFile,
-    String customText,
-  ) async {
+  /// 添加水印到图片（压缩 + 画水印文字 + 经纬度）
+  Future<File> addWatermark(File imageFile, String customText, {double? latitude, double? longitude}) async {
     try {
-      // 读取图片
       final imageBytes = await imageFile.readAsBytes();
       final image = img.decodeImage(imageBytes);
+      if (image == null) throw Exception('Failed to decode image');
 
-      if (image == null) {
-        throw Exception('Failed to decode image');
-      }
-
-      // 压缩图片（限制尺寸）
       final compressed = _compressImage(image);
+      final watermarked = _drawWatermark(compressed, customText, latitude: latitude, longitude: longitude);
 
-      // 保存带水印的图片（quality: 70 减小文件大小）
       final outputFile = File('${imageFile.path}_watermarked.jpg');
-      await outputFile.writeAsBytes(img.encodeJpg(compressed, quality: 70));
-
+      await outputFile.writeAsBytes(img.encodeJpg(watermarked, quality: 70));
       return outputFile;
     } catch (e) {
       debugPrint('Error adding watermark: $e');
-      return imageFile; // 出错时返回原图
+      return imageFile;
     }
   }
 
-  // 添加水印到 XFile (Web 平台)
-  Future<XFile> addWatermarkToXFile(
-    XFile xFile,
-    String customText,
-  ) async {
+  /// 添加水印到 XFile（压缩 + 画水印文字 + 经纬度）
+  Future<XFile> addWatermarkToXFile(XFile xFile, String customText, {double? latitude, double? longitude}) async {
     try {
-      // 读取 XFile 为字节
       final bytes = await xFile.readAsBytes();
       final image = img.decodeImage(bytes);
+      if (image == null) throw Exception('Failed to decode image');
 
-      if (image == null) {
-        throw Exception('Failed to decode image');
-      }
-
-      // 压缩图片（限制尺寸）
       final compressed = _compressImage(image);
+      final watermarked = _drawWatermark(compressed, customText, latitude: latitude, longitude: longitude);
 
-      // 编码为字节（quality: 70 减小文件大小）
-      final outputBytes = img.encodeJpg(compressed, quality: 70);
-
-      // 创建临时文件
+      final outputBytes = img.encodeJpg(watermarked, quality: 70);
       final tempFile = File('${xFile.path}_watermarked.jpg');
       await tempFile.writeAsBytes(outputBytes);
-
       return XFile(tempFile.path);
     } catch (e) {
       debugPrint('Error adding watermark to XFile: $e');
-      return xFile; // 出错时返回原图
+      return xFile;
     }
   }
 }

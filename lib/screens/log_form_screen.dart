@@ -130,14 +130,29 @@ class _LogFormScreenState extends State<LogFormScreen> {
   }
 
   Future<List<dynamic>> _addWatermarksToPhotos(List<dynamic> photos) async {
-    final watermarkedPhotos = <dynamic>[];
+    final result = <dynamic>[];
     final watermarkService = WatermarkService();
     for (var photo in photos) {
-      // 新版 image_picker 全平台返回 XFile
-      final xFile = photo as XFile;
-      watermarkedPhotos.add(await watermarkService.addWatermarkToXFile(xFile, _watermarkTextController.text));
+      if (photo is PhotoWithMeta) {
+        if (photo.isCamera) {
+          // 相机拍照：加水印（项目名 + 日期 + 经纬度）
+          final watermarked = await watermarkService.addWatermarkToXFile(
+            photo.xFile,
+            _watermarkTextController.text,
+            latitude: photo.latitude,
+            longitude: photo.longitude,
+          );
+          result.add(watermarked);
+        } else {
+          // 相册导入：不加水印，直接用
+          result.add(photo.xFile);
+        }
+      } else {
+        // 兼容旧的 XFile 格式
+        result.add(photo as XFile);
+      }
     }
-    return watermarkedPhotos;
+    return result;
   }
 
   @override
