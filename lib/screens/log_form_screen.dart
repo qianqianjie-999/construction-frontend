@@ -10,7 +10,8 @@ import 'package:image_picker/image_picker.dart';
 
 class LogFormScreen extends StatefulWidget {
   final Project project;
-  const LogFormScreen({super.key, required this.project});
+  final ConstructionLog? editLog; // 编辑模式传入现有日志
+  const LogFormScreen({super.key, required this.project, this.editLog});
   @override
   State<LogFormScreen> createState() => _LogFormScreenState();
 }
@@ -41,9 +42,31 @@ class _LogFormScreenState extends State<LogFormScreen> {
   @override
   void initState() {
     super.initState();
-    _dateController.text = _formatDate(DateTime.now());
-    _watermarkTextController.text = widget.project.name;
+    final log = widget.editLog;
+    if (log != null) {
+      // 编辑模式：预填
+      _dateController.text = log.dateStr;
+      _weather = log.weather.isEmpty ? '晴' : log.weather;
+      _temperatureController.text = log.temperature;
+      _windForceController.text = log.windForce;
+      _windDirectionController.text = log.windDirection;
+      _constructionPartController.text = log.constructionPart;
+      _constructionContentController.text = log.constructionContent;
+      _progressController.text = log.progress;
+      _constructionRecordController.text = log.constructionRecord;
+      _technicalSafetyRecordController.text = log.technicalSafetyRecord;
+      _materialRecordController.text = log.materialRecord;
+      _projectManagerController.text = log.projectManager;
+      _recorderController.text = log.recorder;
+      _watermarkTextController.text = widget.project.name;
+    } else {
+      // 新建模式
+      _dateController.text = _formatDate(DateTime.now());
+      _watermarkTextController.text = widget.project.name;
+    }
   }
+
+  bool get _isEditMode => widget.editLog != null;
 
   String _formatDate(DateTime date) {
     return '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
@@ -71,8 +94,6 @@ class _LogFormScreenState extends State<LogFormScreen> {
     if (!_formKey.currentState!.validate()) return;
     setState(() => _isSubmitting = true);
     try {
-      final watermarkedPhotos = await _addWatermarksToPhotos(_sitePhotos);
-      final watermarkedCertificates = await _addWatermarksToPhotos(_certificatePhotos);
       final log = ConstructionLog(
         projectId: widget.project.id,
         date: DateTime.parse(_dateController.text),
@@ -89,17 +110,25 @@ class _LogFormScreenState extends State<LogFormScreen> {
         projectManager: _projectManagerController.text,
         recorder: _recorderController.text,
       );
-      await ApiService().createLog(log, watermarkedPhotos, watermarkedCertificates);
+
+      if (_isEditMode) {
+        // 编辑模式：只更新文字，照片不动
+        await ApiService().updateLog(widget.editLog!.id!, log);
+      } else {
+        // 新建模式：加水印 + 上传照片
+        final watermarkedPhotos = await _addWatermarksToPhotos(_sitePhotos);
+        final watermarkedCertificates = await _addWatermarksToPhotos(_certificatePhotos);
+        await ApiService().createLog(log, watermarkedPhotos, watermarkedCertificates);
+      }
+
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: const Row(
-            children: [
-              Icon(Icons.check_circle, color: Colors.white),
-              SizedBox(width: 12),
-              Text('日志提交成功'),
-            ],
-          ),
+          content: Row(children: [
+            const Icon(Icons.check_circle, color: Colors.white),
+            const SizedBox(width: 12),
+            Text(_isEditMode ? '日志更新成功' : '日志提交成功'),
+          ]),
           backgroundColor: const Color(0xFF4CAF50),
           behavior: SnackBarBehavior.floating,
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
@@ -111,13 +140,11 @@ class _LogFormScreenState extends State<LogFormScreen> {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Row(
-            children: [
-              const Icon(Icons.error_outline, color: Colors.white),
-              const SizedBox(width: 12),
-              Expanded(child: Text('提交失败：$e')),
-            ],
-          ),
+          content: Row(children: [
+            const Icon(Icons.error_outline, color: Colors.white),
+            const SizedBox(width: 12),
+            Expanded(child: Text('${_isEditMode ? '更新' : '提交'}失败：$e')),
+          ]),
           backgroundColor: const Color(0xFFE53935),
           behavior: SnackBarBehavior.floating,
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
@@ -167,7 +194,7 @@ class _LogFormScreenState extends State<LogFormScreen> {
             backgroundColor: const Color(0xFF1a2332),
             leading: IconButton(icon: const Icon(Icons.arrow_back), onPressed: () => Navigator.pop(context)),
             flexibleSpace: FlexibleSpaceBar(
-              title: const Text('录入施工日志', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: Color(0xFFf1f5f9))),
+              title: Text(_isEditMode ? '编辑施工日志' : '录入施工日志', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: Color(0xFFf1f5f9))),
               background: Container(
                 decoration: const BoxDecoration(
                   gradient: LinearGradient(
@@ -266,17 +293,19 @@ class _LogFormScreenState extends State<LogFormScreen> {
                       ]),
                     ]),
                     const SizedBox(height: 24),
-                    _buildSectionHeader(Icons.water_drop, '水印设置', const Color(0xFF00BCD4)),
-                    const SizedBox(height: 12),
-                    _buildCard([_buildFormField('自定义水印文本', Icons.text_fields, _watermarkTextController, hintText: '例如：XX项目')]),
-                    const SizedBox(height: 24),
-                    _buildSectionHeader(Icons.photo_library, '现场照片', const Color(0xFFFF5722)),
-                    const SizedBox(height: 12),
-                    _buildCard([PhotoPickerWidget(photos: _sitePhotos, onPhotosChanged: (photos) => setState(() => _sitePhotos = photos), label: '添加现场照片')]),
-                    const SizedBox(height: 24),
-                    _buildSectionHeader(Icons.assignment, '合格证照片', const Color(0xFF795548)),
-                    const SizedBox(height: 12),
-                    _buildCard([PhotoPickerWidget(photos: _certificatePhotos, onPhotosChanged: (photos) => setState(() => _certificatePhotos = photos), label: '添加合格证照片')]),
+                    if (!_isEditMode) ...[
+                      _buildSectionHeader(Icons.water_drop, '水印设置', const Color(0xFF00BCD4)),
+                      const SizedBox(height: 12),
+                      _buildCard([_buildFormField('自定义水印文本', Icons.text_fields, _watermarkTextController, hintText: '例如：XX项目')]),
+                      const SizedBox(height: 24),
+                      _buildSectionHeader(Icons.photo_library, '现场照片', const Color(0xFFFF5722)),
+                      const SizedBox(height: 12),
+                      _buildCard([PhotoPickerWidget(photos: _sitePhotos, onPhotosChanged: (photos) => setState(() => _sitePhotos = photos), label: '添加现场照片')]),
+                      const SizedBox(height: 24),
+                      _buildSectionHeader(Icons.assignment, '合格证照片', const Color(0xFF795548)),
+                      const SizedBox(height: 12),
+                      _buildCard([PhotoPickerWidget(photos: _certificatePhotos, onPhotosChanged: (photos) => setState(() => _certificatePhotos = photos), label: '添加合格证照片')]),
+                    ],
                     const SizedBox(height: 32),
                     SizedBox(
                       width: double.infinity,
@@ -290,7 +319,13 @@ class _LogFormScreenState extends State<LogFormScreen> {
                           shadowColor: const Color(0xFF00d4ff).withOpacity(0.4),
                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
                         ),
-                        child: _isSubmitting ? const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF0a0f1a))) : const Row(mainAxisAlignment: MainAxisAlignment.center, children: [Icon(Icons.send, size: 20), SizedBox(width: 8), Text('提交日志', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold))]),
+                        child: _isSubmitting
+                            ? const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF0a0f1a)))
+                            : Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+                                Icon(_isEditMode ? Icons.save : Icons.send, size: 20),
+                                const SizedBox(width: 8),
+                                Text(_isEditMode ? '保存修改' : '提交日志', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                              ]),
                       ),
                     ),
                     const SizedBox(height: 32),

@@ -132,6 +132,30 @@ class ApiService {
     }
   }
 
+  Future<void> updateLog(int logId, ConstructionLog log) async {
+    try {
+      final formData = FormData();
+      formData.fields.add(MapEntry('date', log.dateStr));
+      formData.fields.add(MapEntry('weather', log.weather));
+      formData.fields.add(MapEntry('temperature', log.temperature));
+      formData.fields.add(MapEntry('wind_force', log.windForce));
+      formData.fields.add(MapEntry('wind_direction', log.windDirection));
+      formData.fields.add(MapEntry('construction_part', log.constructionPart));
+      formData.fields.add(MapEntry('construction_content', log.constructionContent));
+      formData.fields.add(MapEntry('progress', log.progress));
+      formData.fields.add(MapEntry('construction_record', log.constructionRecord));
+      formData.fields.add(MapEntry('technical_safety_record', log.technicalSafetyRecord));
+      formData.fields.add(MapEntry('material_record', log.materialRecord));
+      formData.fields.add(MapEntry('project_manager', log.projectManager));
+      formData.fields.add(MapEntry('recorder', log.recorder));
+
+      await _dio.put('/api/logs/$logId', data: formData);
+    } catch (e) {
+      debugPrint('Error updating log: $e');
+      rethrow;
+    }
+  }
+
   // 获取单例实例
   static ApiService get instance => _instance;
 

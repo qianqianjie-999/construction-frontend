@@ -3,6 +3,7 @@ import 'package:construction_app/models/project.dart';
 import 'package:construction_app/models/construction_log.dart';
 import 'package:construction_app/services/api_service.dart';
 import 'package:construction_app/services/image_save_service.dart';
+import 'package:construction_app/screens/log_form_screen.dart';
 import 'package:intl/intl.dart';
 
 class ProjectDetailScreen extends StatefulWidget {
@@ -380,6 +381,26 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
                       child: Text('${log.dateStr} ${log.weekdayStr}', style: TextStyle(fontSize: 15, color: weatherColor, fontWeight: FontWeight.w600)),
                     ),
                   ])),
+                  const SizedBox(height: 8),
+                  Row(mainAxisAlignment: MainAxisAlignment.end, children: [
+                    ElevatedButton.icon(
+                      onPressed: () {
+                        Navigator.pop(context);
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => LogFormScreen(project: widget.project, editLog: log),
+                          ),
+                        ).then((_) => setState(() => _logsFuture = ApiService().getLogsByProject(widget.project.id)));
+                      },
+                      icon: const Icon(Icons.edit, size: 18),
+                      label: const Text('编辑'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF00d4ff),
+                        foregroundColor: const Color(0xFF0a0f1a),
+                      ),
+                    ),
+                  ]),
                   const SizedBox(height: 24),
                   Container(
                     padding: const EdgeInsets.all(20),
