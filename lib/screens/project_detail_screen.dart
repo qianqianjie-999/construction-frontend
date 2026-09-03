@@ -222,10 +222,11 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
                                     if (log.constructionRecord.isNotEmpty) ...[
                                       const SizedBox(height: 8),
                                       Row(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
                                         children: [
                                           const Icon(Icons.people, size: 16, color: Color(0xFF94a3b8)),
                                           const SizedBox(width: 4),
-                                          Text(log.constructionRecord, style: const TextStyle(color: Color(0xFF64748b), fontSize: 13)),
+                                          Expanded(child: Text(log.constructionRecord, style: const TextStyle(color: Color(0xFF94a3b8), fontSize: 13, height: 1.5), maxLines: 3, overflow: TextOverflow.ellipsis)),
                                         ],
                                       ),
                                     ],
