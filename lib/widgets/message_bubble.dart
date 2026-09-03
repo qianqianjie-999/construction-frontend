@@ -109,16 +109,17 @@ class MessageBubble extends StatelessWidget {
           onLongPress: () => onImageLongPress?.call(fullUrl),
           child: ClipRRect(
             borderRadius: BorderRadius.circular(8),
-            child: Image.network(
-              fullUrl,
-              width: 200,
-              height: 200,
-              fit: BoxFit.cover,
-              errorBuilder: (_, __, ___) => Container(
-                width: 200,
-                height: 100,
-                color: Colors.black26,
-                child: const Icon(Icons.broken_image, color: Color(0xFF94a3b8)),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 220, maxHeight: 320),
+              child: Image.network(
+                fullUrl,
+                fit: BoxFit.contain,
+                errorBuilder: (_, __, ___) => Container(
+                  width: 200,
+                  height: 100,
+                  color: Colors.black26,
+                  child: const Icon(Icons.broken_image, color: Color(0xFF94a3b8)),
+                ),
               ),
             ),
           ),
