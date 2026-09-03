@@ -37,7 +37,7 @@ class WatermarkService {
     return '${lat.abs().toStringAsFixed(6)}°$latDir ${lng.abs().toStringAsFixed(6)}°$lngDir';
   }
 
-  /// 在图片上画水印（项目名 + 日期 + 经纬度）
+  /// 在图片上画水印（项目名 + 日期时间 + 经纬度）
   img.Image _drawWatermark(img.Image image, String text, {double? latitude, double? longitude}) {
     final now = DateTime.now();
     final dateStr = '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')} '
@@ -48,6 +48,7 @@ class WatermarkService {
 
     final padding = (w * 0.015).round().clamp(8, 20);
     final gpsStr = _formatGps(latitude, longitude);
+    // 项目名 + 日期 + GPS（有就显示）
     final lineCount = gpsStr.isEmpty ? 2 : 3;
     final lineH = 18;
     final barHeight = lineH * lineCount + padding * 2;
@@ -72,15 +73,15 @@ class WatermarkService {
     final textX = padding + 6;
     var textY = h - barHeight - padding + padding ~/ 2;
 
-    // 第一行：项目名
+    // 第一行：项目名（白色）
     img.drawString(image, text, font: font, x: textX, y: textY, color: img.ColorRgba8(255, 255, 255, 255));
     textY += lineH;
 
-    // 第二行：日期时间
-    img.drawString(image, dateStr, font: font, x: textX, y: textY, color: img.ColorRgba8(220, 220, 220, 255));
+    // 第二行：日期时间（白色）
+    img.drawString(image, dateStr, font: font, x: textX, y: textY, color: img.ColorRgba8(255, 255, 255, 255));
     textY += lineH;
 
-    // 第三行：经纬度（如果有）
+    // 第三行：经纬度（蓝色，有就显示）
     if (gpsStr.isNotEmpty) {
       img.drawString(image, gpsStr, font: font, x: textX, y: textY, color: img.ColorRgba8(0, 220, 255, 255));
     }
