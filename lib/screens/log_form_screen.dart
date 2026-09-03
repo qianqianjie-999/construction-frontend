@@ -237,9 +237,9 @@ class _LogFormScreenState extends State<LogFormScreen> {
                     _buildSectionHeader(Icons.engineering, '工程信息', const Color(0xFFFF9800)),
                     const SizedBox(height: 12),
                     _buildCard([
-                      _buildFormField('当日工程施工部位', Icons.location_on, _constructionPartController, hintText: '例如：主体结构'),
+                      _buildFormField('当日工程施工部位', Icons.location_on, _constructionPartController, hintText: '例如：路口名称'),
                       const SizedBox(height: 16),
-                      _buildFormField('当日工程施工内容', Icons.build, _constructionContentController, maxLines: 2, hintText: '详细描述施工内容'),
+                      _buildFormField('当日工程施工内容', Icons.build, _constructionContentController, maxLines: 2, hintText: '比如：勘察现场、基础施工、设备安装等'),
                       const SizedBox(height: 16),
                       _buildFormField('当日工程形象进度', Icons.timeline, _progressController, hintText: '例如：完成70%'),
                     ]),
