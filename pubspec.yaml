@@ -38,6 +38,12 @@ dependencies:
   # 本地存储（保存登录态）
   shared_preferences: ^2.2.2
 
+  # 图片保存到相册
+  image_gallery_saver: ^2.0.3
+
+  # 权限管理
+  permission_handler: ^11.3.1
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

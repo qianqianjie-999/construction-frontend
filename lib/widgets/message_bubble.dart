@@ -7,12 +7,14 @@ class MessageBubble extends StatelessWidget {
   final ChatMessage message;
   final VoidCallback? onLogCardTap;
   final ValueChanged<String>? onImageTap;
+  final ValueChanged<String>? onImageLongPress;
 
   const MessageBubble({
     super.key,
     required this.message,
     this.onLogCardTap,
     this.onImageTap,
+    this.onImageLongPress,
   });
 
   bool get _isMine {
@@ -104,6 +106,7 @@ class MessageBubble extends StatelessWidget {
         ).toString();
         return GestureDetector(
           onTap: () => onImageTap?.call(fullUrl),
+          onLongPress: () => onImageLongPress?.call(fullUrl),
           child: ClipRRect(
             borderRadius: BorderRadius.circular(8),
             child: Image.network(

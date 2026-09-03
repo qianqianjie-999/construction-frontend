@@ -4,6 +4,7 @@ import 'package:image_picker/image_picker.dart';
 import '../models/project.dart';
 import '../services/auth_service.dart';
 import '../services/chat_service.dart';
+import '../services/image_save_service.dart';
 import '../services/socket_service.dart';
 import '../services/watermark_service.dart';
 import '../widgets/message_bubble.dart';
@@ -248,6 +249,7 @@ class _ChatScreenState extends State<ChatScreen> {
                   message: m,
                   onLogCardTap: () => _showLogCard(m.logId),
                   onImageTap: (url) => _showFullImage(url),
+                  onImageLongPress: (url) => _saveImage(url),
                 );
               },
             ),
@@ -326,18 +328,44 @@ class _ChatScreenState extends State<ChatScreen> {
           appBar: AppBar(
             backgroundColor: Colors.black,
             iconTheme: const IconThemeData(color: Colors.white),
+            actions: [
+              IconButton(
+                icon: const Icon(Icons.download, color: Colors.white),
+                onPressed: () => _saveImage(url),
+                tooltip: '保存到相册',
+              ),
+            ],
           ),
           body: Center(
-            child: InteractiveViewer(
-              child: Image.network(url, loadingBuilder: (_, child, progress) {
-                if (progress == null) return child;
-                return CircularProgressIndicator(
-                  value: progress.cumulativeBytesLoaded / (progress.expectedTotalBytes ?? 1),
-                );
-              }),
+            child: GestureDetector(
+              onLongPress: () => _saveImage(url),
+              child: InteractiveViewer(
+                child: Image.network(url, loadingBuilder: (_, child, progress) {
+                  if (progress == null) return child;
+                  return CircularProgressIndicator(
+                    value: progress.cumulativeBytesLoaded / (progress.expectedTotalBytes ?? 1),
+                  );
+                }),
+              ),
             ),
           ),
         ),
+      ),
+    );
+  }
+
+  /// 保存图片到相册
+  Future<void> _saveImage(String url) async {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('正在保存...'), duration: Duration(seconds: 1)),
+    );
+    final (success, msg) = await ImageSaveService().saveFromUrl(url);
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(msg),
+        backgroundColor: success ? const Color(0xFF4CAF50) : const Color(0xFFef4444),
       ),
     );
   }

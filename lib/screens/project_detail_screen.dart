@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:construction_app/models/project.dart';
 import 'package:construction_app/models/construction_log.dart';
 import 'package:construction_app/services/api_service.dart';
+import 'package:construction_app/services/image_save_service.dart';
 import 'package:intl/intl.dart';
 
 class ProjectDetailScreen extends StatefulWidget {
@@ -455,6 +456,7 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
         final photo = photos[index];
         return GestureDetector(
           onTap: () => _showFullImage(photo.fullUrl),
+          onLongPress: () => _saveImage(photo.fullUrl),
           child: ClipRRect(
             borderRadius: BorderRadius.circular(12),
             child: Image.network(
@@ -499,19 +501,45 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
             backgroundColor: Colors.black,
             iconTheme: const IconThemeData(color: Colors.white),
             title: const Text('照片预览', style: TextStyle(color: Colors.white)),
+            actions: [
+              IconButton(
+                icon: const Icon(Icons.download, color: Colors.white),
+                onPressed: () => _saveImage(url),
+                tooltip: '保存到相册',
+              ),
+            ],
           ),
           body: Center(
-            child: InteractiveViewer(
-              child: Image.network(url, loadingBuilder: (_, child, progress) {
-                if (progress == null) return child;
-                return CircularProgressIndicator(
-                  value: progress.cumulativeBytesLoaded / (progress.expectedTotalBytes ?? 1),
-                  color: const Color(0xFF00d4ff),
-                );
-              }),
+            child: GestureDetector(
+              onLongPress: () => _saveImage(url),
+              child: InteractiveViewer(
+                child: Image.network(url, loadingBuilder: (_, child, progress) {
+                  if (progress == null) return child;
+                  return CircularProgressIndicator(
+                    value: progress.cumulativeBytesLoaded / (progress.expectedTotalBytes ?? 1),
+                    color: const Color(0xFF00d4ff),
+                  );
+                }),
+              ),
             ),
           ),
         ),
+      ),
+    );
+  }
+
+  /// 保存图片到相册
+  Future<void> _saveImage(String url) async {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('正在保存...'), duration: Duration(seconds: 1)),
+    );
+    final (success, msg) = await ImageSaveService().saveFromUrl(url);
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(msg),
+        backgroundColor: success ? const Color(0xFF4CAF50) : const Color(0xFFef4444),
       ),
     );
   }
