@@ -108,6 +108,7 @@ class SocketService {
 
     // 服务端 emit('recall_ack', {request_id, success, message})
     _socket!.on('recall_ack', (data) {
+      debugPrint('[socket] recall_ack received: $data');
       if (data is Map) {
         final m = Map<String, dynamic>.from(data);
         final rid = (m['request_id'] ?? '').toString();

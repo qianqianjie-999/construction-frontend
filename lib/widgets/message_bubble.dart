@@ -387,9 +387,26 @@ class MessageBubble extends StatelessWidget {
 
   String _formatTime(String createdAt) {
     if (createdAt.isEmpty) return '';
-    // 简化处理：取 HH:mm:ss 部分
-    final parts = createdAt.split(' ');
-    if (parts.length >= 2) return parts[1].substring(0, 5);
-    return createdAt;
+    try {
+      DateTime dt;
+      if (createdAt.contains('T')) {
+        dt = DateTime.parse(createdAt).toLocal();
+      } else {
+        final parts = createdAt.split(' ');
+        if (parts.length < 2) return createdAt;
+        dt = DateTime.parse('${parts[0]}T${parts[1]}').toLocal();
+      }
+      final now = DateTime.now();
+      final isToday = dt.year == now.year &&
+          dt.month == now.month && dt.day == now.day;
+      final hh = dt.hour.toString().padLeft(2, '0');
+      final mm = dt.minute.toString().padLeft(2, '0');
+      if (isToday) return '$hh:$mm';
+      return '${dt.month}/${dt.day} $hh:$mm';
+    } catch (_) {
+      final parts = createdAt.split(' ');
+      if (parts.length >= 2) return parts[1].substring(0, 5);
+      return createdAt;
+    }
   }
 }

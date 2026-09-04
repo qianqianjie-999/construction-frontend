@@ -212,6 +212,7 @@ class _ChatScreenState extends State<ChatScreen> {
     final rid = _uuid.v4();
     final completer = Completer<(bool, String)>();
     _pendingRecallAck[rid] = completer;
+    debugPrint('[recall] emit recall_message mid=$messageId rid=$rid');
     SocketService().recallMessage(messageId, requestId: rid);
 
     (bool, String) result;
