@@ -10,6 +10,7 @@ class MessageBubble extends StatelessWidget {
   final ValueChanged<String>? onImageTap;
   final ValueChanged<String>? onImageLongPress;
   final ValueChanged<ChatMessage>? onFileTap;
+  final bool highlight; // 搜索结果定位时高亮边框
 
   const MessageBubble({
     super.key,
@@ -18,6 +19,7 @@ class MessageBubble extends StatelessWidget {
     this.onImageTap,
     this.onImageLongPress,
     this.onFileTap,
+    this.highlight = false,
   });
 
   bool get _isMine {
@@ -62,9 +64,24 @@ class MessageBubble extends StatelessWidget {
                       bottomLeft: Radius.circular(isMine ? 12 : 2),
                       bottomRight: Radius.circular(isMine ? 2 : 12),
                     ),
+                    border: highlight
+                        ? Border.all(color: const Color(0xFFfbbf24), width: 2)
+                        : null,
                   ),
                   child: _content(textColor, context),
                 ),
+                if (highlight)
+                  Padding(
+                    padding: const EdgeInsets.only(left: 8, top: 2, right: 8),
+                    child: Text(
+                      '▼ 命中消息',
+                      style: TextStyle(
+                        color: const Color(0xFFfbbf24),
+                        fontSize: 10,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
                 Padding(
                   padding: const EdgeInsets.only(left: 8, top: 2, right: 8),
                   child: Text(

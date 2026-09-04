@@ -69,13 +69,30 @@ class ChatService {
 
   Dio get _dio => ApiService.instance.dio;
 
-  /// 获取历史消息（分页）
-  Future<List<ChatMessage>> getMessages(int projectId, {int? beforeId, int limit = 30}) async {
+  /// 获取历史消息（分页 / 围绕某条消息的上下文窗口）
+  Future<List<ChatMessage>> getMessages(int projectId,
+      {int? beforeId, int? aroundId, int limit = 30}) async {
     final params = <String, dynamic>{'project_id': projectId, 'limit': limit};
     if (beforeId != null) params['before_id'] = beforeId;
+    if (aroundId != null) params['around_id'] = aroundId;
     final response = await _dio.get('/api/chat/messages', queryParameters: params);
     final list = response.data as List;
     return list.map((e) => ChatMessage.fromJson(e as Map<String, dynamic>)).toList();
+  }
+
+  /// 搜索项目聊天记录（服务端全量历史：消息内容/文件名/发送人），最新在前
+  Future<List<ChatMessage>> searchMessages(int projectId, String query,
+      {int limit = 50}) async {
+    final response = await _dio.get('/api/chat/search', queryParameters: {
+      'project_id': projectId,
+      'q': query,
+      'limit': limit,
+    });
+    final data = response.data as Map<String, dynamic>;
+    final items = data['items'] as List? ?? const [];
+    return items
+        .map((e) => ChatMessage.fromJson(e as Map<String, dynamic>))
+        .toList();
   }
 
   /// 上传图片，返回文件名和服务端 url

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
@@ -14,6 +15,7 @@ import '../services/chat_service.dart';
 import '../services/image_save_service.dart';
 import '../services/socket_service.dart';
 import '../services/watermark_service.dart';
+import '../widgets/chat_context_viewer.dart';
 import '../widgets/message_bubble.dart';
 
 /// 聊天主界面
@@ -37,6 +39,14 @@ class _ChatScreenState extends State<ChatScreen> {
   int? _oldestId;
   bool _connected = false;
 
+  // 搜索状态
+  bool _searchMode = false;
+  final TextEditingController _searchController = TextEditingController();
+  Timer? _searchDebounce;
+  List<ChatMessage> _searchResults = [];
+  bool _searching = false;
+  String _searchKeyword = '';
+
   @override
   void initState() {
     super.initState();
@@ -53,6 +63,8 @@ class _ChatScreenState extends State<ChatScreen> {
 
   @override
   void dispose() {
+    _searchDebounce?.cancel();
+    _searchController.dispose();
     SocketService().leaveProject(widget.project.id);
     SocketService().offMessage(_onReceiveMessage);
     _scrollController.dispose();
@@ -293,36 +305,332 @@ class _ChatScreenState extends State<ChatScreen> {
           ],
         ),
         iconTheme: const IconThemeData(color: Color(0xFF00d4ff)),
+        actions: [
+          IconButton(
+            onPressed: _toggleSearch,
+            icon: Icon(_searchMode ? Icons.chat_bubble_outline : Icons.search,
+                color: const Color(0xFF00d4ff)),
+            tooltip: _searchMode ? '返回聊天' : '搜索聊天记录',
+          ),
+        ],
       ),
       body: Column(
         children: [
-          if (_hasMore)
-            TextButton(
-              onPressed: _loading ? null : () => _loadHistory(),
-              child: const Text('加载更多', style: TextStyle(color: Color(0xFF00d4ff))),
-            ),
-          Expanded(
-            child: ListView.builder(
-              controller: _scrollController,
-              padding: const EdgeInsets.symmetric(vertical: 8),
-              itemCount: _messages.length,
-              itemBuilder: (context, index) {
-                final m = _messages[index];
-                return MessageBubble(
-                  message: m,
-                  onLogCardTap: () => _showLogCard(m.logId),
-                  onImageTap: (url) => _showFullImage(url),
-                  onImageLongPress: (url) => _saveImage(url),
-                  onFileTap: (msg) => _downloadAndOpen(msg),
-                );
-              },
-            ),
-          ),
-          if (_loading || _uploading) const LinearProgressIndicator(color: Color(0xFF00d4ff)),
-          _inputBar(),
+          if (_searchMode) _searchHeader(),
+          Expanded(child: _searchMode ? _searchResultsView() : _chatListView()),
+          if (!_searchMode) ...[
+            if (_loading || _uploading) const LinearProgressIndicator(color: Color(0xFF00d4ff)),
+            _inputBar(),
+          ],
         ],
       ),
     );
+  }
+
+  /// 正常聊天视图（加载更多 + 消息列表）
+  Widget _chatListView() {
+    return Column(
+      children: [
+        if (_hasMore)
+          TextButton(
+            onPressed: _loading ? null : () => _loadHistory(),
+            child: const Text('加载更多', style: TextStyle(color: Color(0xFF00d4ff))),
+          ),
+        Expanded(
+          child: ListView.builder(
+            controller: _scrollController,
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            itemCount: _messages.length,
+            itemBuilder: (context, index) {
+              final m = _messages[index];
+              return MessageBubble(
+                message: m,
+                onLogCardTap: () => _showLogCard(m.logId),
+                onImageTap: (url) => _showFullImage(url),
+                onImageLongPress: (url) => _saveImage(url),
+                onFileTap: (msg) => _downloadAndOpen(msg),
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
+
+  /* ============ 聊天记录搜索 ============ */
+
+  void _toggleSearch() {
+    setState(() => _searchMode = !_searchMode);
+    if (!_searchMode) _searchController.clear();
+    _searchResults = [];
+    _searching = false;
+    _searchKeyword = '';
+  }
+
+  Widget _searchHeader() {
+    return Container(
+      color: const Color(0xFF1a2332),
+      padding: const EdgeInsets.only(left: 4, right: 8, top: 4, bottom: 4),
+      child: Row(
+        children: [
+          IconButton(
+            onPressed: _toggleSearch,
+            icon: const Icon(Icons.arrow_back, color: Color(0xFF00d4ff), size: 20),
+            tooltip: '退出搜索',
+          ),
+          Expanded(
+            child: TextField(
+              controller: _searchController,
+              autofocus: true,
+              style: const TextStyle(color: Color(0xFFf1f5f9), fontSize: 14),
+              textInputAction: TextInputAction.search,
+              decoration: InputDecoration(
+                isDense: true,
+                hintText: '搜索消息 / 文件名 / 发送人…',
+                hintStyle: const TextStyle(color: Color(0xFF64748b)),
+                filled: true,
+                fillColor: const Color(0xFF0a0f1a),
+                prefixIcon: const Icon(Icons.search, color: Color(0xFF64748b), size: 18),
+                contentPadding: const EdgeInsets.symmetric(horizontal: 4, vertical: 10),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(18),
+                  borderSide: BorderSide.none,
+                ),
+                suffixIcon: _searchKeyword.isEmpty
+                    ? null
+                    : IconButton(
+                        icon: const Icon(Icons.clear, color: Color(0xFF64748b), size: 18),
+                        onPressed: () {
+                          _searchController.clear();
+                          _onSearchChanged('');
+                        },
+                      ),
+              ),
+              onChanged: _onSearchChanged,
+            ),
+          ),
+          const SizedBox(width: 4),
+        ],
+      ),
+    );
+  }
+
+  void _onSearchChanged(String value) {
+    _searchDebounce?.cancel();
+    _searchDebounce = Timer(const Duration(milliseconds: 300), () {
+      _runSearch(value.trim());
+    });
+    if (value.trim().isEmpty) {
+      _searchDebounce?.cancel();
+      setState(() {
+        _searchResults = [];
+        _searching = false;
+        _searchKeyword = '';
+      });
+    }
+  }
+
+  Future<void> _runSearch(String keyword) async {
+    if (keyword.isEmpty) return;
+    setState(() {
+      _searching = true;
+      _searchKeyword = keyword;
+    });
+    try {
+      final results = await ChatService().searchMessages(widget.project.id, keyword);
+      if (!mounted) return;
+      // 丢弃过期结果（关键词已变化）
+      if (_searchController.text.trim() != keyword) return;
+      setState(() {
+        _searchResults = results;
+        _searching = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _searching = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('搜索失败: $e')),
+      );
+    }
+  }
+
+  Widget _searchResultsView() {
+    if (_searching) {
+      return const Center(child: CircularProgressIndicator(color: Color(0xFF00d4ff)));
+    }
+    if (_searchKeyword.isEmpty) {
+      return const Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.search, color: Color(0xFF334155), size: 56),
+            SizedBox(height: 12),
+            Text('搜索当前项目全部聊天记录', style: TextStyle(color: Color(0xFF64748b), fontSize: 14)),
+            SizedBox(height: 4),
+            Text('支持消息内容、文件名、发送人', style: TextStyle(color: Color(0xFF475569), fontSize: 12)),
+          ],
+        ),
+      );
+    }
+    if (_searchResults.isEmpty) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(Icons.search_off, color: Color(0xFF334155), size: 56),
+            const SizedBox(height: 12),
+            Text('未找到与「$_searchKeyword」相关的消息',
+                style: const TextStyle(color: Color(0xFF94a3b8), fontSize: 14)),
+            const SizedBox(height: 4),
+            const Text('试试换关键词，或搜索发送人昵称', style: TextStyle(color: Color(0xFF475569), fontSize: 12)),
+          ],
+        ),
+      );
+    }
+    return Column(
+      children: [
+        Container(
+          width: double.infinity,
+          color: const Color(0xFF0f172a),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          child: Text(
+            '共 ${_searchResults.length} 条结果（搜索全量历史，最多展示 50 条）',
+            style: const TextStyle(color: Color(0xFF00d4ff), fontSize: 12),
+          ),
+        ),
+        Expanded(
+          child: ListView.builder(
+            padding: const EdgeInsets.symmetric(vertical: 4),
+            itemCount: _searchResults.length,
+            itemBuilder: (context, index) {
+              final m = _searchResults[index];
+              return _searchTile(m);
+            },
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _searchTile(ChatMessage m) {
+    final preview = _messagePreview(m);
+    return ListTile(
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
+      leading: CircleAvatar(
+        radius: 16,
+        backgroundColor: const Color(0xFF00d4ff).withOpacity(0.15),
+        child: Text(
+          m.nickname.isNotEmpty ? m.nickname.characters.first : '?',
+          style: const TextStyle(color: Color(0xFF00d4ff), fontSize: 14, fontWeight: FontWeight.bold),
+        ),
+      ),
+      title: Text.rich(
+        TextSpan(
+          children: _highlightSpans(
+            preview,
+            _searchKeyword,
+            const TextStyle(color: Color(0xFFf1f5f9), fontSize: 14),
+          ),
+        ),
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+      ),
+      subtitle: Padding(
+        padding: const EdgeInsets.only(top: 2),
+        child: Text(
+          '${m.nickname} · ${_shortTime(m.createdAt)} · ${_typeLabel(m.contentType)}',
+          style: const TextStyle(color: Color(0xFF64748b), fontSize: 12),
+        ),
+      ),
+      trailing: const Icon(Icons.chevron_right, color: Color(0xFF334155), size: 20),
+      onTap: () => _openContext(m),
+    );
+  }
+
+  /// 打开命中消息的上下文定位页
+  void _openContext(ChatMessage m) {
+    final id = m.id;
+    if (id == null) return;
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => ChatContextViewer(
+          projectId: widget.project.id,
+          projectName: widget.project.name,
+          anchorId: id,
+        ),
+      ),
+    );
+  }
+
+  /// 搜索命中高亮文本片段构造
+  List<TextSpan> _highlightSpans(String text, String keyword, TextStyle style) {
+    if (keyword.isEmpty || text.isEmpty) return [TextSpan(text: text, style: style)];
+    final lower = text.toLowerCase();
+    final lq = keyword.toLowerCase();
+    final spans = <TextSpan>[];
+    var i = 0;
+    while (i < text.length) {
+      final idx = lower.indexOf(lq, i);
+      if (idx < 0) {
+        spans.add(TextSpan(text: text.substring(i), style: style));
+        break;
+      }
+      if (idx > i) spans.add(TextSpan(text: text.substring(i, idx), style: style));
+      spans.add(TextSpan(
+        text: text.substring(idx, idx + keyword.length),
+        style: style.copyWith(
+          color: const Color(0xFF713f12),
+          backgroundColor: const Color(0xFFfde047),
+          fontWeight: FontWeight.bold,
+        ),
+      ));
+      i = idx + keyword.length;
+    }
+    return spans;
+  }
+
+  String _messagePreview(ChatMessage m) {
+    switch (m.contentType) {
+      case 'image':
+        return '🖼 图片消息';
+      case 'log_card':
+        return '📋 施工日志卡片';
+      case 'file':
+        try {
+          final raw = jsonDecode(m.content ?? '');
+          if (raw is Map) {
+            final name = (raw['name'] ?? raw['path'] ?? '文件').toString();
+            return '📎 $name';
+          }
+        } catch (_) {}
+        return '📎 文件消息';
+      default:
+        return m.content ?? '';
+    }
+  }
+
+  String _typeLabel(String contentType) {
+    switch (contentType) {
+      case 'image':
+        return '图片';
+      case 'file':
+        return '文件';
+      case 'log_card':
+        return '日志卡片';
+      default:
+        return '文本';
+    }
+  }
+
+  String _shortTime(String createdAt) {
+    if (createdAt.isEmpty) return '';
+    final parts = createdAt.split(' ');
+    if (parts.length >= 2) {
+      final date = parts[0].substring(5); // MM-dd
+      final time = parts[1].length >= 5 ? parts[1].substring(0, 5) : parts[1];
+      return '$date $time';
+    }
+    return createdAt;
   }
 
   Widget _inputBar() {
