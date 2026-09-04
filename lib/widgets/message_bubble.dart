@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import '../services/chat_service.dart';
 import '../services/auth_service.dart';
@@ -8,6 +9,7 @@ class MessageBubble extends StatelessWidget {
   final VoidCallback? onLogCardTap;
   final ValueChanged<String>? onImageTap;
   final ValueChanged<String>? onImageLongPress;
+  final ValueChanged<ChatMessage>? onFileTap;
 
   const MessageBubble({
     super.key,
@@ -15,6 +17,7 @@ class MessageBubble extends StatelessWidget {
     this.onLogCardTap,
     this.onImageTap,
     this.onImageLongPress,
+    this.onFileTap,
   });
 
   bool get _isMine {
@@ -124,6 +127,8 @@ class MessageBubble extends StatelessWidget {
             ),
           ),
         );
+      case 'file':
+        return _fileCard(textColor, context);
       case 'log_card':
         return GestureDetector(
           onTap: onLogCardTap,
@@ -157,6 +162,107 @@ class MessageBubble extends StatelessWidget {
           style: TextStyle(color: textColor, fontSize: 14, height: 1.4),
         );
     }
+  }
+
+  Widget _fileCard(Color textColor, BuildContext context) {
+    Map<String, dynamic>? meta;
+    try {
+      final raw = jsonDecode(message.content ?? '');
+      if (raw is Map) meta = Map<String, dynamic>.from(raw);
+    } catch (_) {}
+    if (meta == null || (meta['path'] ?? '').toString().isEmpty) {
+      return Text('文件消息', style: TextStyle(color: textColor));
+    }
+    final name = (meta['name'] ?? meta['path']).toString();
+    final size = (meta['size'] is num) ? (meta['size'] as num).toInt() : 0;
+    final ext = name.contains('.') ? name.split('.').last.toLowerCase() : '';
+    final (icon, iconBg) = _fileVisual(ext);
+
+    return GestureDetector(
+      onTap: () => onFileTap?.call(message),
+      child: Container(
+        width: 230,
+        padding: const EdgeInsets.all(10),
+        decoration: BoxDecoration(
+          color: textColor.withOpacity(0.06),
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: textColor.withOpacity(0.15)),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                color: iconBg,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Icon(icon, color: Colors.white, size: 22),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    name,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: textColor,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      height: 1.3,
+                    ),
+                  ),
+                  const SizedBox(height: 3),
+                  Text(
+                    '${ext.isEmpty ? 'FILE' : ext.toUpperCase()} · ${_formatSize(size)} · 点击下载',
+                    style: TextStyle(color: textColor.withOpacity(0.6), fontSize: 11),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  (IconData, Color) _fileVisual(String ext) {
+    switch (ext) {
+      case 'doc':
+      case 'docx':
+        return (Icons.description_outlined, const Color(0xFF2B579A));
+      case 'xls':
+      case 'xlsx':
+      case 'csv':
+        return (Icons.table_chart_outlined, const Color(0xFF217346));
+      case 'ppt':
+      case 'pptx':
+        return (Icons.slideshow_outlined, const Color(0xFFD24726));
+      case 'pdf':
+        return (Icons.picture_as_pdf_outlined, const Color(0xFFD93025));
+      case 'dwg':
+      case 'dxf':
+        return (Icons.architecture_outlined, const Color(0xFF0E7490));
+      case 'txt':
+      case 'md':
+        return (Icons.article_outlined, const Color(0xFF0F766E));
+      case 'zip':
+      case 'rar':
+      case '7z':
+        return (Icons.folder_zip_outlined, const Color(0xFF64748B));
+      default:
+        return (Icons.insert_drive_file_outlined, const Color(0xFF0EA5E9));
+    }
+  }
+
+  String _formatSize(int bytes) {
+    if (bytes <= 0) return '0 B';
+    if (bytes >= 1024 * 1024) return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
+    if (bytes >= 1024) return '${(bytes / 1024).toStringAsFixed(1)} KB';
+    return '$bytes B';
   }
 
   String _formatTime(String createdAt) {

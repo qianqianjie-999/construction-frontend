@@ -1,7 +1,14 @@
+import 'dart:convert';
+import 'dart:io';
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
+import 'package:dio/dio.dart';
+import 'package:file_picker/file_picker.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:open_filex/open_filex.dart';
+import 'package:path_provider/path_provider.dart';
 import '../models/project.dart';
+import '../services/api_service.dart';
 import '../services/auth_service.dart';
 import '../services/chat_service.dart';
 import '../services/image_save_service.dart';
@@ -26,6 +33,7 @@ class _ChatScreenState extends State<ChatScreen> {
   final List<ChatMessage> _messages = [];
   bool _loading = false;
   bool _hasMore = true;
+  bool _uploading = false;
   int? _oldestId;
   bool _connected = false;
 
@@ -198,6 +206,61 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
+  /// 选择并发送文件（word/excel/ppt/pdf/dwg 等，白名单与服务端一致）
+  Future<void> _pickAndSendFile() async {
+    FilePickerResult? result;
+    try {
+      result = await FilePicker.platform.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: const [
+          'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'pdf',
+          'dwg', 'dxf', 'txt', 'csv', 'md', 'zip', 'rar', '7z',
+        ],
+      );
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('无法打开文件选择器: $e')),
+        );
+      }
+      return;
+    }
+    final picked = result?.files.single;
+    if (picked == null || picked.path == null) return;
+
+    final file = File(picked.path!);
+    int len = 0;
+    try {
+      len = await file.length();
+    } catch (_) {}
+    if (len > 100 * 1024 * 1024) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('文件超过 100MB 上限，请压缩后重试')),
+        );
+      }
+      return;
+    }
+    if (!mounted) return;
+    setState(() => _uploading = true);
+    try {
+      final meta = await ChatService().uploadFile(XFile(picked.path!, name: picked.name));
+      SocketService().sendFile(widget.project.id, {
+        'name': (meta['name'] ?? picked.name).toString(),
+        'path': (meta['filename'] ?? '').toString(),
+        'size': (meta['size'] is num) ? (meta['size'] as num).toInt() : len,
+      });
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('文件上传失败: $e')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _uploading = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -250,11 +313,12 @@ class _ChatScreenState extends State<ChatScreen> {
                   onLogCardTap: () => _showLogCard(m.logId),
                   onImageTap: (url) => _showFullImage(url),
                   onImageLongPress: (url) => _saveImage(url),
+                  onFileTap: (msg) => _downloadAndOpen(msg),
                 );
               },
             ),
           ),
-          if (_loading) const LinearProgressIndicator(color: Color(0xFF00d4ff)),
+          if (_loading || _uploading) const LinearProgressIndicator(color: Color(0xFF00d4ff)),
           _inputBar(),
         ],
       ),
@@ -271,7 +335,12 @@ class _ChatScreenState extends State<ChatScreen> {
       child: Row(
         children: [
           IconButton(
-            onPressed: _pickAndSendImage,
+            onPressed: _uploading ? null : _pickAndSendFile,
+            icon: const Icon(Icons.attach_file, color: Color(0xFF00d4ff)),
+            tooltip: '发送文件',
+          ),
+          IconButton(
+            onPressed: _uploading ? null : _pickAndSendImage,
             icon: const Icon(Icons.image, color: Color(0xFF00d4ff)),
           ),
           Expanded(
@@ -366,6 +435,124 @@ class _ChatScreenState extends State<ChatScreen> {
       SnackBar(
         content: Text(msg),
         backgroundColor: success ? const Color(0xFF4CAF50) : const Color(0xFFef4444),
+      ),
+    );
+  }
+
+  /// 点击文件消息：已下载过则直接打开，否则先下载到应用文档目录再打开
+  Future<void> _downloadAndOpen(ChatMessage msg) async {
+    Map<String, dynamic>? meta;
+    try {
+      final raw = jsonDecode(msg.content ?? '');
+      if (raw is Map) meta = Map<String, dynamic>.from(raw);
+    } catch (_) {}
+    final path = (meta?['path'] ?? '').toString();
+    if (path.isEmpty) return;
+    final name = (meta?['name'] ?? path).toString();
+
+    final dir = await getApplicationDocumentsDirectory();
+    final savePath = '${dir.path}${Platform.pathSeparator}$path';
+
+    if (File(savePath).existsSync()) {
+      await OpenFilex.open(savePath);
+      return;
+    }
+    if (!mounted) return;
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => _DownloadDialog(
+        url: ChatService().fileUrl(path, name: name),
+        savePath: savePath,
+        fileName: name,
+      ),
+    );
+  }
+}
+
+/// 文件下载进度对话框：下载完成后自动关闭并调用系统应用打开
+class _DownloadDialog extends StatefulWidget {
+  final String url;
+  final String savePath;
+  final String fileName;
+
+  const _DownloadDialog({
+    required this.url,
+    required this.savePath,
+    required this.fileName,
+  });
+
+  @override
+  State<_DownloadDialog> createState() => _DownloadDialogState();
+}
+
+class _DownloadDialogState extends State<_DownloadDialog> {
+  double _progress = 0;
+  String _status = '连接中...';
+
+  @override
+  void initState() {
+    super.initState();
+    _start();
+  }
+
+  Future<void> _start() async {
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      await ApiService.instance.dio.download(
+        widget.url,
+        widget.savePath,
+        options: Options(receiveTimeout: const Duration(minutes: 10)),
+        onReceiveProgress: (received, total) {
+          if (!mounted) return;
+          setState(() {
+            if (total > 0) {
+              _progress = received / total;
+              _status = '下载中 ${(received / 1048576).toStringAsFixed(1)} / '
+                  '${(total / 1048576).toStringAsFixed(1)} MB';
+            } else {
+              _status = '下载中 ${(received / 1048576).toStringAsFixed(1)} MB ...';
+            }
+          });
+        },
+      );
+      if (!mounted) return;
+      Navigator.of(context).pop();
+      final result = await OpenFilex.open(widget.savePath);
+      if (result.type != ResultType.done) {
+        messenger.showSnackBar(
+          const SnackBar(content: Text('文件已下载，但本机暂无应用可打开，可在系统文件管理器中查看')),
+        );
+      }
+    } catch (e) {
+      if (!mounted) return;
+      Navigator.of(context).pop();
+      messenger.showSnackBar(SnackBar(content: Text('文件下载失败: $e')));
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      backgroundColor: const Color(0xFF1a2332),
+      title: Text(
+        widget.fileName,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: const TextStyle(color: Color(0xFFf1f5f9), fontSize: 15),
+      ),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          LinearProgressIndicator(
+            value: _progress <= 0 ? null : _progress,
+            color: const Color(0xFF00d4ff),
+            backgroundColor: const Color(0xFF334155),
+          ),
+          const SizedBox(height: 12),
+          Text(_status, style: const TextStyle(color: Color(0xFF94a3b8), fontSize: 12)),
+        ],
       ),
     );
   }

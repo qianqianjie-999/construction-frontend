@@ -1,5 +1,6 @@
 import 'dart:typed_data';
 import 'package:dio/dio.dart';
+import 'package:image_picker/image_picker.dart'; // XFile 类型
 import 'api_service.dart';
 
 /// 聊天消息
@@ -83,6 +84,32 @@ class ChatService {
     formData.files.add(MapEntry('image', MultipartFile.fromBytes(bytes, filename: filename)));
     final response = await _dio.post('/api/chat/upload_image', data: formData);
     return response.data as Map<String, dynamic>;
+  }
+
+  /// 上传聊天文件（word/excel/ppt/pdf/dwg 等，白名单由服务端校验）
+  /// 返回 {filename, name, size, url}；超大文件放宽发送/接收超时
+  Future<Map<String, dynamic>> uploadFile(XFile file) async {
+    final bytes = await file.readAsBytes();
+    final formData = FormData();
+    formData.files.add(MapEntry('file', MultipartFile.fromBytes(bytes, filename: file.name)));
+    final response = await _dio.post(
+      '/api/chat/upload_file',
+      data: formData,
+      options: Options(
+        sendTimeout: const Duration(minutes: 10),
+        receiveTimeout: const Duration(minutes: 10),
+      ),
+    );
+    return response.data as Map<String, dynamic>;
+  }
+
+  /// 文件下载完整 URL（?name= 指定浏览器/系统保存的文件名）
+  String fileUrl(String path, {String? name}) {
+    final base = ApiService.instance.baseUrl;
+    final q = (name != null && name.isNotEmpty)
+        ? '?name=${Uri.encodeQueryComponent(name)}'
+        : '';
+    return '$base/api/chat/files/$path$q';
   }
 
   /// 标记消息已读

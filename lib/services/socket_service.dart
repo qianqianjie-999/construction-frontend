@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:socket_io_client/socket_io_client.dart' as IO;
 import 'api_service.dart';
@@ -120,6 +121,15 @@ class SocketService {
       'project_id': projectId,
       'content_type': 'image',
       'content': filename,
+    });
+  }
+
+  /// 发送文件消息（meta 已通过 upload_file 上传获得：{name, path, size}）
+  void sendFile(int projectId, Map<String, dynamic> meta) {
+    _socket?.emit('send_message', {
+      'project_id': projectId,
+      'content_type': 'file',
+      'content': jsonEncode(meta),
     });
   }
 
