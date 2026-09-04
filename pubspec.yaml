@@ -45,7 +45,7 @@ dependencies:
   permission_handler: ^11.3.1
 
   # 聊天发送任意文件（word/excel/ppt/dwg 等）
-  file_picker: ^8.1.2
+  file_picker: ^7.0.0
 
   # 用系统应用打开下载的文件
   open_filex: ^4.4.0
