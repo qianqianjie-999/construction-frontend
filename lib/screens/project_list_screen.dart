@@ -17,6 +17,7 @@ class _ProjectListScreenState extends State<ProjectListScreen> {
   late Future<List<Project>> _projectsFuture;
   Map<int, int> _unread = {};
   bool _showChatEntry = false;
+  String _query = '';
 
   @override
   void initState() {
@@ -42,7 +43,7 @@ class _ProjectListScreenState extends State<ProjectListScreen> {
       body: CustomScrollView(
         slivers: [
           SliverAppBar(
-            expandedHeight: 140,
+            expandedHeight: 110,
             floating: false,
             pinned: true,
             backgroundColor: const Color(0xFF1a2332),
@@ -140,6 +141,26 @@ class _ProjectListScreenState extends State<ProjectListScreen> {
               ),
             ),
           ),
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+              child: TextField(
+                onChanged: (v) => setState(() => _query = v.trim()),
+                style: const TextStyle(color: Color(0xFFf1f5f9), fontSize: 14),
+                decoration: InputDecoration(
+                  hintText: '搜索项目 / 地点 / 单位 / 负责人',
+                  hintStyle: const TextStyle(color: Color(0xFF64748b), fontSize: 14),
+                  prefixIcon: const Icon(Icons.search, color: Color(0xFF64748b), size: 20),
+                  isDense: true,
+                  filled: true,
+                  fillColor: const Color(0xFF1a2332),
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+                  focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: Color(0xFF00d4ff), width: 1)),
+                  contentPadding: const EdgeInsets.symmetric(vertical: 10),
+                ),
+              ),
+            ),
+          ),
           FutureBuilder<List<Project>>(
             future: _projectsFuture,
             builder: (context, snapshot) {
@@ -186,7 +207,29 @@ class _ProjectListScreenState extends State<ProjectListScreen> {
                   ),
                 );
               } else {
-                final projects = snapshot.data!;
+                final all = snapshot.data!;
+                final q = _query.toLowerCase();
+                final projects = q.isEmpty
+                    ? all
+                    : all.where((p) =>
+                        p.name.toLowerCase().contains(q) ||
+                        p.location.toLowerCase().contains(q) ||
+                        p.company.toLowerCase().contains(q) ||
+                        p.manager.toLowerCase().contains(q)).toList();
+                if (projects.isEmpty) {
+                  return SliverFillRemaining(
+                    child: Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          const Icon(Icons.search_off, size: 64, color: Color(0xFF64748b)),
+                          const SizedBox(height: 16),
+                          Text('没有匹配"$_query"的项目', style: const TextStyle(fontSize: 16, color: Color(0xFF94a3b8))),
+                        ],
+                      ),
+                    ),
+                  );
+                }
                 final cardColors = [
                   [const Color(0xFF00d4ff), const Color(0xFF0099cc)],
                   [const Color(0xFF10b981), const Color(0xFF059669)],
@@ -195,50 +238,54 @@ class _ProjectListScreenState extends State<ProjectListScreen> {
                   [const Color(0xFFec4899), const Color(0xFFdb2777)],
                 ];
                 return SliverPadding(
-                  padding: const EdgeInsets.all(16),
+                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
                   sliver: SliverList(
                     delegate: SliverChildBuilderDelegate(
                       (context, index) {
                         final project = projects[index];
                         final colorPair = cardColors[index % cardColors.length];
                         return Container(
-                          margin: const EdgeInsets.only(bottom: 16),
+                          margin: const EdgeInsets.only(bottom: 10),
                           decoration: BoxDecoration(
                             color: const Color(0xFF1a2332),
-                            borderRadius: BorderRadius.circular(20),
+                            borderRadius: BorderRadius.circular(14),
                             border: Border.all(color: const Color(0xFF2d3a4f)),
-                            boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.2), blurRadius: 20, offset: const Offset(0, 4))],
                           ),
                           child: Material(
                             color: Colors.transparent,
                             child: InkWell(
-                              borderRadius: BorderRadius.circular(20),
+                              borderRadius: BorderRadius.circular(14),
                               onTap: () => Navigator.pushNamed(context, '/project_detail', arguments: project),
                               child: Padding(
-                                padding: const EdgeInsets.all(20),
+                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                                 child: Row(
                                   children: [
                                     Container(
-                                      width: 60, height: 60,
-                                      decoration: BoxDecoration(gradient: LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: colorPair), borderRadius: BorderRadius.circular(16)),
-                                      child: Center(child: Text(project.name.substring(0, math.min(project.name.length, 1)), style: const TextStyle(color: Color(0xFF0a0f1a), fontWeight: FontWeight.bold, fontSize: 24))),
+                                      width: 42, height: 42,
+                                      decoration: BoxDecoration(gradient: LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: colorPair), borderRadius: BorderRadius.circular(11)),
+                                      child: Center(child: Text(project.name.substring(0, math.min(project.name.length, 1)), style: const TextStyle(color: Color(0xFF0a0f1a), fontWeight: FontWeight.bold, fontSize: 18))),
                                     ),
-                                    const SizedBox(width: 16),
+                                    const SizedBox(width: 12),
                                     Expanded(
                                       child: Column(
                                         crossAxisAlignment: CrossAxisAlignment.start,
                                         children: [
-                                          Text(project.name, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 17, color: Color(0xFFf1f5f9))),
-                                          const SizedBox(height: 6),
-                                          Row(children: [const Icon(Icons.location_on, size: 14, color: Color(0xFF64748b)), const SizedBox(width: 4), Expanded(child: Text(project.location.isEmpty ? '未填写地点' : project.location, style: const TextStyle(color: Color(0xFF94a3b8), fontSize: 13), overflow: TextOverflow.ellipsis))]),
-                                          const SizedBox(height: 4),
-                                          Row(children: [const Icon(Icons.business, size: 14, color: Color(0xFF64748b)), const SizedBox(width: 4), Expanded(child: Text(project.company.isEmpty ? '未填写单位' : project.company, style: const TextStyle(color: Color(0xFF94a3b8), fontSize: 13), overflow: TextOverflow.ellipsis))]),
-                                          const SizedBox(height: 4),
-                                          Row(children: [const Icon(Icons.person, size: 14, color: Color(0xFF64748b)), const SizedBox(width: 4), Text(project.manager.isEmpty ? '未填写负责人' : project.manager, style: const TextStyle(color: Color(0xFF94a3b8), fontSize: 13))]),
+                                          Text(project.name, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: Color(0xFFf1f5f9))),
+                                          const SizedBox(height: 3),
+                                          Row(children: [const Icon(Icons.location_on, size: 12, color: Color(0xFF64748b)), const SizedBox(width: 3), Expanded(child: Text(project.location.isEmpty ? '未填写地点' : project.location, style: const TextStyle(color: Color(0xFF94a3b8), fontSize: 12), overflow: TextOverflow.ellipsis))]),
+                                          const SizedBox(height: 2),
+                                          Row(children: [
+                                            const Icon(Icons.business, size: 12, color: Color(0xFF64748b)),
+                                            const SizedBox(width: 3),
+                                            Expanded(child: Text(project.company.isEmpty ? '未填写单位' : project.company, style: const TextStyle(color: Color(0xFF94a3b8), fontSize: 12), overflow: TextOverflow.ellipsis)),
+                                            const SizedBox(width: 8),
+                                            const Icon(Icons.person, size: 12, color: Color(0xFF64748b)),
+                                            const SizedBox(width: 3),
+                                            Flexible(child: Text(project.manager.isEmpty ? '未填写' : project.manager, style: const TextStyle(color: Color(0xFF94a3b8), fontSize: 12), overflow: TextOverflow.ellipsis)),
+                                          ]),
                                         ],
                                       ),
                                     ),
-                                    Container(padding: const EdgeInsets.all(8), decoration: BoxDecoration(color: const Color(0xFF111827), borderRadius: BorderRadius.circular(10)), child: const Icon(Icons.arrow_forward_ios, size: 18, color: Color(0xFF94a3b8))),
                                     const SizedBox(width: 8),
                                     GestureDetector(
                                       behavior: HitTestBehavior.opaque,
@@ -251,24 +298,24 @@ class _ProjectListScreenState extends State<ProjectListScreen> {
                                         alignment: Alignment.center,
                                         children: [
                                           Container(
-                                            padding: const EdgeInsets.all(8),
+                                            padding: const EdgeInsets.all(7),
                                             decoration: BoxDecoration(
                                               color: const Color(0xFF111827),
-                                              borderRadius: BorderRadius.circular(10),
+                                              borderRadius: BorderRadius.circular(9),
                                               border: Border.all(color: const Color(0xFF00d4ff).withOpacity(0.4)),
                                             ),
-                                            child: const Icon(Icons.chat_bubble_outline, size: 18, color: Color(0xFF00d4ff)),
+                                            child: const Icon(Icons.chat_bubble_outline, size: 16, color: Color(0xFF00d4ff)),
                                           ),
                                           if ((_unread[project.id] ?? 0) > 0)
                                             Positioned(
-                                              right: 2, top: 2,
+                                              right: 0, top: 0,
                                               child: Container(
-                                                padding: const EdgeInsets.all(4),
+                                                padding: const EdgeInsets.all(3),
                                                 decoration: const BoxDecoration(color: Color(0xFFef4444), shape: BoxShape.circle),
-                                                constraints: const BoxConstraints(minWidth: 16, minHeight: 16),
+                                                constraints: const BoxConstraints(minWidth: 15, minHeight: 15),
                                                 child: Text(
                                                   '${_unread[project.id]}',
-                                                  style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
+                                                  style: const TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.bold),
                                                   textAlign: TextAlign.center,
                                                 ),
                                               ),
