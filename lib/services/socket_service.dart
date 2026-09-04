@@ -19,6 +19,7 @@ class SocketService {
   bool get isConnected => _connected;
 
   final Set<MessageHandler> _messageHandlers = {};
+  final Set<MessageHandler> _recallHandlers = {};
   final Set<VoidHandler> _connectHandlers = {};
   final Set<VoidHandler> _disconnectHandlers = {};
   final Set<ErrorHandler> _errorHandlers = {};
@@ -93,6 +94,16 @@ class SocketService {
       }
     });
 
+    // 服务端 emit('message_recalled', {message_id, project_id})
+    _socket!.on('message_recalled', (data) {
+      if (data is Map) {
+        final m = Map<String, dynamic>.from(data);
+        for (final h in _recallHandlers.toList()) {
+          h(m);
+        }
+      }
+    });
+
     _socket!.connect();
   }
 
@@ -142,6 +153,11 @@ class SocketService {
     });
   }
 
+  /// 撤回消息（仅本人消息，2 分钟内）
+  void recallMessage(int messageId) {
+    _socket?.emit('recall_message', {'message_id': messageId});
+  }
+
   /// 批量标记已读
   void markRead(List<int> messageIds) {
     _socket?.emit('mark_read', {'message_ids': messageIds});
@@ -154,6 +170,14 @@ class SocketService {
 
   void offMessage(MessageHandler h) {
     _messageHandlers.remove(h);
+  }
+
+  void onRecall(MessageHandler h) {
+    _recallHandlers.add(h);
+  }
+
+  void offRecall(MessageHandler h) {
+    _recallHandlers.remove(h);
   }
 
   void onConnect(VoidHandler h) {
@@ -175,6 +199,7 @@ class SocketService {
     _socket = null;
     _connected = false;
     _messageHandlers.clear();
+    _recallHandlers.clear();
     _connectHandlers.clear();
     _disconnectHandlers.clear();
     _errorHandlers.clear();

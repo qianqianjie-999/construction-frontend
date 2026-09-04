@@ -11,6 +11,7 @@ class MessageBubble extends StatelessWidget {
   final ValueChanged<String>? onImageTap;
   final ValueChanged<String>? onImageLongPress;
   final ValueChanged<ChatMessage>? onFileTap;
+  final ValueChanged<int>? onRecall;  // 撤回回调
   final bool highlight; // 搜索结果定位时高亮边框
 
   const MessageBubble({
@@ -20,6 +21,7 @@ class MessageBubble extends StatelessWidget {
     this.onImageTap,
     this.onImageLongPress,
     this.onFileTap,
+    this.onRecall,
     this.highlight = false,
   });
 
@@ -35,42 +37,67 @@ class MessageBubble extends StatelessWidget {
     final bubbleColor = isMine ? const Color(0xFF00d4ff) : const Color(0xFF1a2332);
     final textColor = isMine ? const Color(0xFF0a0f1a) : const Color(0xFFf1f5f9);
 
-    return Container(
-      margin: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
-      child: Row(
-        mainAxisAlignment: isMine ? MainAxisAlignment.end : MainAxisAlignment.start,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          if (!isMine) _avatar(),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: align,
-              children: [
-                if (!isMine)
-                  Padding(
-                    padding: const EdgeInsets.only(left: 8, bottom: 2),
-                    child: Text(
-                      message.nickname,
-                      style: const TextStyle(color: Color(0xFF94a3b8), fontSize: 12),
+    // 已撤回消息：显示灰色提示
+    if (message.recalled) {
+      return Container(
+        margin: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
+        child: Row(
+          mainAxisAlignment: isMine ? MainAxisAlignment.end : MainAxisAlignment.start,
+          children: [
+            if (!isMine) _avatar(),
+            Container(
+              constraints: const BoxConstraints(maxWidth: 280),
+              padding: const EdgeInsets.all(10),
+              child: Text(
+                '${isMine ? "你" : message.nickname}撤回了一条消息',
+                style: const TextStyle(color: Color(0xFF64748b), fontSize: 13, fontStyle: FontStyle.italic),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return GestureDetector(
+      onLongPress: isMine && onRecall != null
+          ? () => _showRecallMenu(context)
+          : null,
+      child: Container(
+        margin: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
+        child: Row(
+          mainAxisAlignment: isMine ? MainAxisAlignment.end : MainAxisAlignment.start,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (!isMine) _avatar(),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: align,
+                children: [
+                  if (!isMine)
+                    Padding(
+                      padding: const EdgeInsets.only(left: 8, bottom: 2),
+                      child: Text(
+                        message.nickname,
+                        style: const TextStyle(color: Color(0xFF94a3b8), fontSize: 12),
+                      ),
                     ),
-                  ),
-                Container(
-                  constraints: const BoxConstraints(maxWidth: 280),
-                  padding: const EdgeInsets.all(10),
-                  decoration: BoxDecoration(
-                    color: bubbleColor,
-                    borderRadius: BorderRadius.only(
-                      topLeft: const Radius.circular(12),
-                      topRight: const Radius.circular(12),
-                      bottomLeft: Radius.circular(isMine ? 12 : 2),
-                      bottomRight: Radius.circular(isMine ? 2 : 12),
+                  Container(
+                    constraints: const BoxConstraints(maxWidth: 280),
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: bubbleColor,
+                      borderRadius: BorderRadius.only(
+                        topLeft: const Radius.circular(12),
+                        topRight: const Radius.circular(12),
+                        bottomLeft: Radius.circular(isMine ? 12 : 2),
+                        bottomRight: Radius.circular(isMine ? 2 : 12),
+                      ),
+                      border: highlight
+                          ? Border.all(color: const Color(0xFFfbbf24), width: 2)
+                          : null,
                     ),
-                    border: highlight
-                        ? Border.all(color: const Color(0xFFfbbf24), width: 2)
-                        : null,
+                    child: _content(textColor, context),
                   ),
-                  child: _content(textColor, context),
-                ),
                 if (highlight)
                   Padding(
                     padding: const EdgeInsets.only(left: 8, top: 2, right: 8),
@@ -94,6 +121,31 @@ class MessageBubble extends StatelessWidget {
             ),
           ),
           if (isMine) _avatar(),
+        ],
+      ),
+      ),
+    );
+  }
+
+  void _showRecallMenu(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF1a2332),
+        title: const Text('消息操作', style: TextStyle(color: Color(0xFFf1f5f9))),
+        content: const Text('确定要撤回这条消息吗？', style: TextStyle(color: Color(0xFF94a3b8))),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('取消', style: TextStyle(color: Color(0xFF64748b))),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              onRecall?.call(message.id!);
+            },
+            child: const Text('撤回', style: TextStyle(color: Color(0xFFef4444), fontWeight: FontWeight.bold)),
+          ),
         ],
       ),
     );

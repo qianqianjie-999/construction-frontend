@@ -68,6 +68,7 @@ class _ChatScreenState extends State<ChatScreen> {
     _searchController.dispose();
     SocketService().leaveProject(widget.project.id);
     SocketService().offMessage(_onReceiveMessage);
+    SocketService().offRecall(_onReceiveRecall);
     _scrollController.dispose();
     _inputController.dispose();
     super.dispose();
@@ -120,6 +121,8 @@ class _ChatScreenState extends State<ChatScreen> {
     final socket = SocketService();
     socket.offMessage(_onReceiveMessage);
     socket.onMessage(_onReceiveMessage);
+    socket.offRecall(_onReceiveRecall);
+    socket.onRecall(_onReceiveRecall);
     socket.onConnect(() {
       if (!mounted) return;
       setState(() => _connected = true);
@@ -150,6 +153,44 @@ class _ChatScreenState extends State<ChatScreen> {
     });
     WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom());
     _markAllRead();
+  }
+
+  void _onReceiveRecall(Map<String, dynamic> data) {
+    final messageId = data['message_id'] as int?;
+    if (messageId == null) return;
+    setState(() {
+      final idx = _messages.indexWhere((m) => m.id == messageId);
+      if (idx >= 0) {
+        final old = _messages[idx];
+        _messages[idx] = ChatMessage(
+          id: old.id,
+          projectId: old.projectId,
+          userId: old.userId,
+          username: old.username,
+          nickname: old.nickname,
+          avatar: old.avatar,
+          contentType: old.contentType,
+          content: old.content,
+          logId: old.logId,
+          createdAt: old.createdAt,
+          isReadByMe: old.isReadByMe,
+          recalled: true,
+        );
+      }
+    });
+  }
+
+  void _recallMessage(int messageId) {
+    SocketService().recallMessage(messageId);
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('消息已撤回'),
+          backgroundColor: Color(0xFF4CAF50),
+          duration: Duration(seconds: 2),
+        ),
+      );
+    }
   }
 
   void _scrollToBottom() {
@@ -365,6 +406,7 @@ class _ChatScreenState extends State<ChatScreen> {
                 onImageTap: (url) => _showFullImage(url),
                 onImageLongPress: (url) => _saveImage(url),
                 onFileTap: (msg) => _downloadAndOpen(msg),
+                onRecall: (id) => _recallMessage(id),
               );
             },
           ),

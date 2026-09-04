@@ -16,6 +16,7 @@ class ChatMessage {
   final int? logId;
   final String createdAt;
   final bool isReadByMe;
+  final bool recalled;
 
   ChatMessage({
     this.id,
@@ -29,6 +30,7 @@ class ChatMessage {
     this.logId,
     required this.createdAt,
     this.isReadByMe = false,
+    this.recalled = false,
   });
 
   factory ChatMessage.fromJson(Map<String, dynamic> json) {
@@ -44,6 +46,7 @@ class ChatMessage {
       logId: json['log_id'] as int?,
       createdAt: json['created_at'] as String? ?? '',
       isReadByMe: json['is_read_by_me'] as bool? ?? false,
+      recalled: json['recalled'] as bool? ?? false,
     );
   }
 
