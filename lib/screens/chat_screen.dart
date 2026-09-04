@@ -10,13 +10,13 @@ import 'package:image_picker/image_picker.dart';
 import 'package:open_filex/open_filex.dart';
 import 'package:path_provider/path_provider.dart';
 import '../models/project.dart';
-import '../services/api_service.dart';
 import '../services/auth_service.dart';
 import '../services/chat_service.dart';
 import '../services/image_save_service.dart';
 import '../services/socket_service.dart';
 import '../services/watermark_service.dart';
 import '../widgets/chat_context_viewer.dart';
+import '../widgets/chat_download_dialog.dart';
 import '../widgets/message_bubble.dart';
 
 /// 聊天主界面
@@ -774,98 +774,10 @@ class _ChatScreenState extends State<ChatScreen> {
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (_) => _DownloadDialog(
+      builder: (_) => ChatDownloadDialog(
         url: ChatService().fileUrl(path, name: name),
         savePath: savePath,
         fileName: name,
-      ),
-    );
-  }
-}
-
-/// 文件下载进度对话框：下载完成后自动关闭并调用系统应用打开
-class _DownloadDialog extends StatefulWidget {
-  final String url;
-  final String savePath;
-  final String fileName;
-
-  const _DownloadDialog({
-    required this.url,
-    required this.savePath,
-    required this.fileName,
-  });
-
-  @override
-  State<_DownloadDialog> createState() => _DownloadDialogState();
-}
-
-class _DownloadDialogState extends State<_DownloadDialog> {
-  double _progress = 0;
-  String _status = '连接中...';
-
-  @override
-  void initState() {
-    super.initState();
-    _start();
-  }
-
-  Future<void> _start() async {
-    final messenger = ScaffoldMessenger.of(context);
-    try {
-      await ApiService.instance.dio.download(
-        widget.url,
-        widget.savePath,
-        options: Options(receiveTimeout: const Duration(minutes: 10)),
-        onReceiveProgress: (received, total) {
-          if (!mounted) return;
-          setState(() {
-            if (total > 0) {
-              _progress = received / total;
-              _status = '下载中 ${(received / 1048576).toStringAsFixed(1)} / '
-                  '${(total / 1048576).toStringAsFixed(1)} MB';
-            } else {
-              _status = '下载中 ${(received / 1048576).toStringAsFixed(1)} MB ...';
-            }
-          });
-        },
-      );
-      if (!mounted) return;
-      Navigator.of(context).pop();
-      final result = await OpenFilex.open(widget.savePath);
-      if (result.type != ResultType.done) {
-        messenger.showSnackBar(
-          const SnackBar(content: Text('文件已下载，但本机暂无应用可打开，可在系统文件管理器中查看')),
-        );
-      }
-    } catch (e) {
-      if (!mounted) return;
-      Navigator.of(context).pop();
-      messenger.showSnackBar(SnackBar(content: Text('文件下载失败: $e')));
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return AlertDialog(
-      backgroundColor: const Color(0xFF1a2332),
-      title: Text(
-        widget.fileName,
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-        style: const TextStyle(color: Color(0xFFf1f5f9), fontSize: 15),
-      ),
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          LinearProgressIndicator(
-            value: _progress <= 0 ? null : _progress,
-            color: const Color(0xFF00d4ff),
-            backgroundColor: const Color(0xFF334155),
-          ),
-          const SizedBox(height: 12),
-          Text(_status, style: const TextStyle(color: Color(0xFF94a3b8), fontSize: 12)),
-        ],
       ),
     );
   }
