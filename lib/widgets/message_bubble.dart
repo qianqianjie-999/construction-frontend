@@ -127,6 +127,44 @@ class MessageBubble extends StatelessWidget {
     );
   }
 
+  void _showImageMenu(BuildContext context, String url) {
+    final actions = <Widget>[];
+    // 自己的消息且可撤回 → 加撤回选项
+    if (_isMine && onRecall != null && message.id != null) {
+      actions.add(ListTile(
+        leading: const Icon(Icons.undo, color: Color(0xFFef4444)),
+        title: const Text('撤回消息', style: TextStyle(color: Color(0xFFef4444))),
+        onTap: () {
+          Navigator.pop(context);
+          _showRecallMenu(context);
+        },
+      ));
+    }
+    // 所有人都能保存
+    actions.add(ListTile(
+      leading: const Icon(Icons.download, color: Color(0xFF00d4ff)),
+      title: const Text('保存到相册', style: TextStyle(color: Color(0xFFf1f5f9))),
+      onTap: () {
+        Navigator.pop(context);
+        onImageLongPress?.call(url);
+      },
+    ));
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: const Color(0xFF1a2332),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(12)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: actions,
+        ),
+      ),
+    );
+  }
+
   void _showRecallMenu(BuildContext context) {
     showDialog(
       context: context,
@@ -179,7 +217,7 @@ class MessageBubble extends StatelessWidget {
         ).toString();
         return GestureDetector(
           onTap: () => onImageTap?.call(fullUrl),
-          onLongPress: () => onImageLongPress?.call(fullUrl),
+          onLongPress: () => _showImageMenu(context, fullUrl),
           child: ClipRRect(
             borderRadius: BorderRadius.circular(8),
             child: ConstrainedBox(
