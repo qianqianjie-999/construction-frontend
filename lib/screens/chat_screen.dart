@@ -196,18 +196,28 @@ class _ChatScreenState extends State<ChatScreen> {
 
   Future<void> _pickAndSendImage() async {
     final picker = ImagePicker();
-    final xfile = await picker.pickImage(source: ImageSource.gallery, imageQuality: 70);
-    if (xfile == null) return;
-    final bytes = await xfile.readAsBytes();
-    // 压缩图片：限制尺寸 1280px + 质量 70，适配低带宽
-    final compressed = await WatermarkService().compressBytes(bytes);
-    final uint8Bytes = Uint8List.fromList(compressed);
+    // 一次最多选 9 张（微信式多选）；imageQuality 原生侧压缩，
+    // 服务端另有 2MB 上限 + 统一压缩双保险
+    final xfiles = await picker.pickMultiImage(imageQuality: 70, limit: 9);
+    if (xfiles == null || xfiles.isEmpty) return;
     if (!mounted) return;
-    setState(() => _loading = true);
+    setState(() {
+      _loading = true;
+      _uploading = true; // 多张上传期间同时锁住图片/文件按钮，防止重复触发
+    });
     try {
-      final result = await ChatService().uploadImage(uint8Bytes, 'chat_${DateTime.now().millisecondsSinceEpoch}.jpg');
-      final filename = result['filename'] as String;
-      SocketService().sendImage(widget.project.id, filename);
+      for (var i = 0; i < xfiles.length; i++) {
+        final xfile = xfiles[i];
+        final bytes = await xfile.readAsBytes();
+        // 压缩图片：限制尺寸 1280px + 质量 70，适配低带宽
+        final compressed = await WatermarkService().compressBytes(bytes);
+        final uint8Bytes = Uint8List.fromList(compressed);
+        // 时间戳毫秒 + 序号双重保证文件名唯一
+        final filename =
+            'chat_${DateTime.now().millisecondsSinceEpoch}_$i.jpg';
+        final result = await ChatService().uploadImage(uint8Bytes, filename);
+        SocketService().sendImage(widget.project.id, result['filename'] as String);
+      }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -215,7 +225,12 @@ class _ChatScreenState extends State<ChatScreen> {
         );
       }
     } finally {
-      if (mounted) setState(() => _loading = false);
+      if (mounted) {
+        setState(() {
+          _loading = false;
+          _uploading = false;
+        });
+      }
     }
   }
 
@@ -644,12 +659,12 @@ class _ChatScreenState extends State<ChatScreen> {
       child: Row(
         children: [
           IconButton(
-            onPressed: _uploading ? null : _pickAndSendFile,
+            onPressed: (_loading || _uploading) ? null : _pickAndSendFile,
             icon: const Icon(Icons.attach_file, color: Color(0xFF00d4ff)),
             tooltip: '发送文件',
           ),
           IconButton(
-            onPressed: _uploading ? null : _pickAndSendImage,
+            onPressed: (_loading || _uploading) ? null : _pickAndSendImage,
             icon: const Icon(Icons.image, color: Color(0xFF00d4ff)),
           ),
           Expanded(
