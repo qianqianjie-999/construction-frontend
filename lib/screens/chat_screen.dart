@@ -661,11 +661,12 @@ class _ChatScreenState extends State<ChatScreen> {
           IconButton(
             onPressed: (_loading || _uploading) ? null : _pickAndSendFile,
             icon: const Icon(Icons.attach_file, color: Color(0xFF00d4ff)),
-            tooltip: '发送文件',
+            tooltip: '发送文件（Word/Excel/PDF/DWG等）',
           ),
           IconButton(
             onPressed: (_loading || _uploading) ? null : _pickAndSendImage,
-            icon: const Icon(Icons.image, color: Color(0xFF00d4ff)),
+            icon: const Icon(Icons.photo_library, color: Color(0xFF00d4ff)),
+            tooltip: '发送图片（可多选，最多9张）',
           ),
           Expanded(
             child: TextField(
