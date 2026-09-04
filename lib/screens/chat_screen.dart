@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:dio/dio.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:image_picker/image_picker.dart';
@@ -717,12 +718,16 @@ class _ChatScreenState extends State<ChatScreen> {
             child: GestureDetector(
               onLongPress: () => _saveImage(url),
               child: InteractiveViewer(
-                child: Image.network(url, loadingBuilder: (_, child, progress) {
-                  if (progress == null) return child;
-                  return CircularProgressIndicator(
-                    value: progress.cumulativeBytesLoaded / (progress.expectedTotalBytes ?? 1),
-                  );
-                }),
+                child: CachedNetworkImage(
+                  imageUrl: url,
+                  fit: BoxFit.contain,
+                  placeholder: (_, __) => const Center(
+                    child: CircularProgressIndicator(color: Colors.white),
+                  ),
+                  errorWidget: (_, __, ___) => const Center(
+                    child: Icon(Icons.broken_image, color: Colors.white54, size: 48),
+                  ),
+                ),
               ),
             ),
           ),

@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import '../services/chat_service.dart';
 import '../services/auth_service.dart';
 
@@ -131,10 +132,22 @@ class MessageBubble extends StatelessWidget {
             borderRadius: BorderRadius.circular(8),
             child: ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 220, maxHeight: 320),
-              child: Image.network(
-                fullUrl,
+              child: CachedNetworkImage(
+                imageUrl: fullUrl,
                 fit: BoxFit.contain,
-                errorBuilder: (_, __, ___) => Container(
+                placeholder: (_, __) => Container(
+                  width: 200,
+                  height: 120,
+                  color: Colors.black26,
+                  child: const Center(
+                    child: SizedBox(
+                      width: 22,
+                      height: 22,
+                      child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF00d4ff)),
+                    ),
+                  ),
+                ),
+                errorWidget: (_, __, ___) => Container(
                   width: 200,
                   height: 100,
                   color: Colors.black26,

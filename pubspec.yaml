@@ -50,6 +50,9 @@ dependencies:
   # 用系统应用打开下载的文件
   open_filex: ^4.4.0
 
+  # 聊天图片磁盘缓存（默认上限 200 张 / 30 天自动过期，避免重复下载）
+  cached_network_image: ^3.3.1
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
