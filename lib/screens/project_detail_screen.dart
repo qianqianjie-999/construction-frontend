@@ -17,6 +17,7 @@ class ProjectDetailScreen extends StatefulWidget {
 class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
   Future<List<ConstructionLog>>? _logsFuture;
   bool _deleting = false;
+  String _query = '';
 
   @override
   void initState() {
@@ -30,7 +31,7 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
       body: CustomScrollView(
         slivers: [
           SliverAppBar(
-            expandedHeight: 140,
+            expandedHeight: 120,
             floating: false,
             pinned: true,
             backgroundColor: const Color(0xFF0B1220),
@@ -101,6 +102,26 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
               ),
             ],
           ),
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+              child: TextField(
+                onChanged: (v) => setState(() => _query = v.trim()),
+                style: const TextStyle(color: Color(0xFFf1f5f9), fontSize: 14),
+                decoration: InputDecoration(
+                  hintText: '搜索日期 / 天气 / 施工内容 / 记录',
+                  hintStyle: const TextStyle(color: Color(0xFF64748b), fontSize: 14),
+                  prefixIcon: const Icon(Icons.search, color: Color(0xFF64748b), size: 20),
+                  isDense: true,
+                  filled: true,
+                  fillColor: const Color(0xFF1a2332),
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+                  focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: Color(0xFF00d4ff), width: 1)),
+                  contentPadding: const EdgeInsets.symmetric(vertical: 10),
+                ),
+              ),
+            ),
+          ),
           FutureBuilder<List<ConstructionLog>>(
             future: _logsFuture,
             builder: (context, snapshot) {
@@ -137,107 +158,122 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
                   ),
                 );
               } else {
-                final logs = snapshot.data!;
+                final all = snapshot.data!;
+                final q = _query.toLowerCase();
+                final logs = q.isEmpty
+                    ? all
+                    : all.where((l) =>
+                        DateFormat('yyyy-MM-dd').format(l.date).contains(q) ||
+                        DateFormat('yyyy年MM月dd日').format(l.date).contains(q) ||
+                        DateFormat('MM月dd日').format(l.date).contains(q) ||
+                        l.weather.toLowerCase().contains(q) ||
+                        l.constructionPart.toLowerCase().contains(q) ||
+                        l.constructionContent.toLowerCase().contains(q) ||
+                        l.constructionRecord.toLowerCase().contains(q) ||
+                        l.technicalSafetyRecord.toLowerCase().contains(q) ||
+                        l.progress.toLowerCase().contains(q) ||
+                        l.projectManager.toLowerCase().contains(q) ||
+                        l.recorder.toLowerCase().contains(q)).toList();
+                if (logs.isEmpty) {
+                  return SliverFillRemaining(
+                    child: Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          const Icon(Icons.search_off, size: 64, color: Color(0xFF64748b)),
+                          const SizedBox(height: 16),
+                          Text('没有匹配"$_query"的日志', style: const TextStyle(fontSize: 16, color: Color(0xFF94a3b8))),
+                        ],
+                      ),
+                    ),
+                  );
+                }
                 return SliverPadding(
-                  padding: const EdgeInsets.all(16),
+                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
                   sliver: SliverList(
                     delegate: SliverChildBuilderDelegate(
                       (context, index) {
                         final log = logs[index];
                         final weatherColor = _getWeatherColor(log.weather);
                         return Container(
-                          margin: const EdgeInsets.only(bottom: 16),
+                          margin: const EdgeInsets.only(bottom: 10),
                           decoration: BoxDecoration(
                             color: const Color(0xFF1a2332),
-                            borderRadius: BorderRadius.circular(20),
+                            borderRadius: BorderRadius.circular(14),
                             border: Border.all(color: const Color(0xFF2d3a4f)),
-                            boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.2), blurRadius: 20, offset: const Offset(0, 4))],
                           ),
                           child: Material(
                             color: Colors.transparent,
                             child: InkWell(
-                              borderRadius: BorderRadius.circular(20),
+                              borderRadius: BorderRadius.circular(14),
                               onTap: () => _showLogDetail(log),
                               child: Padding(
-                                padding: const EdgeInsets.all(20),
+                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                                 child: Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
                                     Row(
                                       children: [
                                         Container(
-                                          padding: const EdgeInsets.all(10),
+                                          padding: const EdgeInsets.all(7),
                                           decoration: BoxDecoration(
                                             gradient: LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: [const Color(0xFF00d4ff).withOpacity(0.1), const Color(0xFF0099cc).withOpacity(0.1)]),
-                                            borderRadius: BorderRadius.circular(12),
+                                            borderRadius: BorderRadius.circular(9),
                                           ),
-                                          child: const Icon(Icons.calendar_today, color: Color(0xFF00d4ff), size: 24),
+                                          child: const Icon(Icons.calendar_today, color: Color(0xFF00d4ff), size: 17),
                                         ),
-                                        const SizedBox(width: 12),
+                                        const SizedBox(width: 10),
                                         Expanded(
-                                          child: Column(
-                                            crossAxisAlignment: CrossAxisAlignment.start,
-                                            children: [
-                                              Text(DateFormat('yyyy 年 MM 月 dd 日').format(log.date), style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Color(0xFFf1f5f9))),
-                                              Text(DateFormat('EEEE', 'zh_CN').format(log.date), style: const TextStyle(fontSize: 13, color: Color(0xFF64748b))),
-                                            ],
+                                          child: Text.rich(
+                                            TextSpan(
+                                              children: [
+                                                TextSpan(text: DateFormat('yyyy年MM月dd日').format(log.date), style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: Color(0xFFf1f5f9))),
+                                                TextSpan(text: '  ${DateFormat('EEEE', 'zh_CN').format(log.date)}', style: const TextStyle(fontSize: 12, color: Color(0xFF64748b))),
+                                              ],
+                                            ),
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
                                           ),
                                         ),
                                         Container(
-                                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                                           decoration: BoxDecoration(
                                             color: weatherColor.withOpacity(0.15),
-                                            borderRadius: BorderRadius.circular(20),
+                                            borderRadius: BorderRadius.circular(12),
                                             border: Border.all(color: weatherColor.withOpacity(0.3)),
                                           ),
                                           child: Row(
                                             mainAxisSize: MainAxisSize.min,
                                             children: [
-                                              Icon(Icons.cloud, size: 16, color: weatherColor),
-                                              const SizedBox(width: 4),
-                                              Text(log.weather.isEmpty ? '未知' : log.weather, style: TextStyle(color: weatherColor, fontWeight: FontWeight.w600, fontSize: 13)),
+                                              Icon(Icons.cloud, size: 13, color: weatherColor),
+                                              const SizedBox(width: 3),
+                                              Text(log.weather.isEmpty ? '未知' : log.weather, style: TextStyle(color: weatherColor, fontWeight: FontWeight.w600, fontSize: 12)),
                                             ],
                                           ),
                                         ),
                                       ],
                                     ),
                                     if (log.constructionContent.isNotEmpty) ...[
-                                      const SizedBox(height: 16),
-                                      Container(
-                                        padding: const EdgeInsets.all(12),
-                                        decoration: BoxDecoration(
-                                          color: const Color(0xFF111827),
-                                          borderRadius: BorderRadius.circular(12),
-                                          border: Border.all(color: const Color(0xFF2d3a4f)),
-                                        ),
-                                        child: Row(
-                                          children: [
-                                            const Icon(Icons.build, size: 18, color: Color(0xFF94a3b8)),
-                                            const SizedBox(width: 8),
-                                            Expanded(child: Text(log.constructionContent, style: const TextStyle(color: Color(0xFFf1f5f9), height: 1.4), maxLines: 2, overflow: TextOverflow.ellipsis)),
-                                          ],
-                                        ),
-                                      ),
-                                    ],
-                                    if (log.constructionRecord.isNotEmpty) ...[
                                       const SizedBox(height: 8),
                                       Row(
-                                        crossAxisAlignment: CrossAxisAlignment.start,
                                         children: [
-                                          const Icon(Icons.people, size: 16, color: Color(0xFF94a3b8)),
-                                          const SizedBox(width: 4),
-                                          Expanded(child: Text(log.constructionRecord, style: const TextStyle(color: Color(0xFF94a3b8), fontSize: 13, height: 1.5), maxLines: 3, overflow: TextOverflow.ellipsis)),
+                                          const Icon(Icons.build, size: 13, color: Color(0xFF94a3b8)),
+                                          const SizedBox(width: 5),
+                                          Expanded(child: Text(log.constructionContent, style: const TextStyle(color: Color(0xFFf1f5f9), fontSize: 13, height: 1.35), maxLines: 1, overflow: TextOverflow.ellipsis)),
                                         ],
                                       ),
                                     ],
-                                    const SizedBox(height: 12),
-                                    Row(
-                                      mainAxisAlignment: MainAxisAlignment.end,
-                                      children: [
-                                        Text('查看详情', style: const TextStyle(color: Color(0xFF00d4ff), fontWeight: FontWeight.w600, fontSize: 13)),
-                                        const Icon(Icons.chevron_right, size: 20, color: Color(0xFF00d4ff)),
-                                      ],
-                                    ),
+                                    if (log.constructionRecord.isNotEmpty) ...[
+                                      const SizedBox(height: 4),
+                                      Row(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          const Icon(Icons.people, size: 13, color: Color(0xFF94a3b8)),
+                                          const SizedBox(width: 5),
+                                          Expanded(child: Text(log.constructionRecord, style: const TextStyle(color: Color(0xFF94a3b8), fontSize: 12, height: 1.4), maxLines: 2, overflow: TextOverflow.ellipsis)),
+                                        ],
+                                      ),
+                                    ],
                                   ],
                                 ),
                               ),
