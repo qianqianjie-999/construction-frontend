@@ -20,6 +20,18 @@ import '../widgets/chat_context_viewer.dart';
 import '../widgets/chat_download_dialog.dart';
 import '../widgets/message_bubble.dart';
 
+/// 列表显示项：日期头 或 消息
+class _DisplayItem {
+  final bool isDateHeader;
+  final String? label;
+  final int? messageIndex;
+  const _DisplayItem._({required this.isDateHeader, this.label, this.messageIndex});
+  factory _DisplayItem.message(int index) =>
+      _DisplayItem._(isDateHeader: false, messageIndex: index);
+  factory _DisplayItem.header(String text) =>
+      _DisplayItem._(isDateHeader: true, label: text);
+}
+
 /// 聊天主界面
 class ChatScreen extends StatefulWidget {
   final Project project;
@@ -465,7 +477,7 @@ class _ChatScreenState extends State<ChatScreen> {
             itemBuilder: (context, displayIndex) {
               final mapped = _mapDisplayIndex(displayIndex);
               if (mapped.isDateHeader) {
-                return _dateHeader(mapped.label);
+                return _dateHeader(mapped.label ?? '');
               }
               final m = _messages[mapped.messageIndex!];
               return MessageBubble(
