@@ -9,6 +9,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:open_filex/open_filex.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:uuid/uuid.dart';
 import '../models/project.dart';
 import '../services/auth_service.dart';
 import '../services/chat_service.dart';
@@ -48,9 +49,19 @@ class _ChatScreenState extends State<ChatScreen> {
   bool _searching = false;
   String _searchKeyword = '';
 
+  // 撤回 ack 等待
+  final Map<String, Completer<(bool, String)>> _pendingRecallAck = {};
+  late final RecallAckHandler _recallAckHandler;
+  static const _uuid = Uuid();
+
   @override
   void initState() {
     super.initState();
+    _recallAckHandler = (rid, ok, msg) {
+      final c = _pendingRecallAck.remove(rid);
+      c?.complete((ok, msg));
+    };
+    SocketService().onRecallAck(_recallAckHandler);
     _init();
   }
 
@@ -69,6 +80,11 @@ class _ChatScreenState extends State<ChatScreen> {
     SocketService().leaveProject(widget.project.id);
     SocketService().offMessage(_onReceiveMessage);
     SocketService().offRecall(_onReceiveRecall);
+    SocketService().offRecallAck(_recallAckHandler);
+    for (final c in _pendingRecallAck.values) {
+      c.completeError('disposed');
+    }
+    _pendingRecallAck.clear();
     _scrollController.dispose();
     _inputController.dispose();
     super.dispose();
@@ -180,17 +196,31 @@ class _ChatScreenState extends State<ChatScreen> {
     });
   }
 
-  void _recallMessage(int messageId) {
-    SocketService().recallMessage(messageId);
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('消息已撤回'),
-          backgroundColor: Color(0xFF4CAF50),
-          duration: Duration(seconds: 2),
-        ),
+  Future<void> _recallMessage(int messageId) async {
+    final rid = _uuid.v4();
+    final completer = Completer<(bool, String)>();
+    _pendingRecallAck[rid] = completer;
+    SocketService().recallMessage(messageId, requestId: rid);
+
+    (bool, String) result;
+    try {
+      result = await completer.future.timeout(
+        const Duration(seconds: 8),
+        onTimeout: () => (false, '超时，请重试'),
       );
+    } catch (_) {
+      _pendingRecallAck.remove(rid);
+      result = (false, '撤回失败');
     }
+    if (!mounted) return;
+    final (ok, msg) = result;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(ok ? '消息已撤回' : msg),
+        backgroundColor: ok ? const Color(0xFF4CAF50) : const Color(0xFFef4444),
+        duration: const Duration(seconds: 2),
+      ),
+    );
   }
 
   void _scrollToBottom() {
@@ -384,8 +414,42 @@ class _ChatScreenState extends State<ChatScreen> {
     );
   }
 
-  /// 正常聊天视图（加载更多 + 消息列表）
+  bool _isSameDay(DateTime a, DateTime b) =>
+      a.year == b.year && a.month == b.month && a.day == b.day;
+
+  DateTime? _parseDay(String createdAt) {
+    if (createdAt.isEmpty) return null;
+    // createdAt 格式: '2026-09-04 10:30:00' 或 带 T 的 ISO
+    try {
+      if (createdAt.contains('T')) return DateTime.parse(createdAt).toLocal();
+      final parts = createdAt.split(' ').first.split('-');
+      if (parts.length != 3) return null;
+      final y = int.tryParse(parts[0]) ?? 0;
+      final m = int.tryParse(parts[1]) ?? 0;
+      final d = int.tryParse(parts[2]) ?? 0;
+      return DateTime(y, m, d);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  String _formatDayLabel(String createdAt) {
+    final d = _parseDay(createdAt);
+    if (d == null) return '';
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final yesterday = today.subtract(const Duration(days: 1));
+    if (d == today) return '今天';
+    if (d == yesterday) return '昨天';
+    return '${d.year}年${d.month}月${d.day}日';
+  }
+
+  /// 正常聊天视图（加载更多 + 消息列表 + 日期分组头）
   Widget _chatListView() {
+    // 预计算日期头：遍历 _messages，遇到日期变化时在该 index 前插一个日期头。
+    // 用额外的 builder 列表实现：日期头 index 作为负的逻辑位置，直接判断。
+    final itemCount = _messages.length + (_messages.isEmpty ? 0 : _countDateHeaders());
+
     return Column(
       children: [
         if (_hasMore)
@@ -397,9 +461,13 @@ class _ChatScreenState extends State<ChatScreen> {
           child: ListView.builder(
             controller: _scrollController,
             padding: const EdgeInsets.symmetric(vertical: 8),
-            itemCount: _messages.length,
-            itemBuilder: (context, index) {
-              final m = _messages[index];
+            itemCount: itemCount,
+            itemBuilder: (context, displayIndex) {
+              final mapped = _mapDisplayIndex(displayIndex);
+              if (mapped.isDateHeader) {
+                return _dateHeader(mapped.label);
+              }
+              final m = _messages[mapped.messageIndex!];
               return MessageBubble(
                 message: m,
                 onLogCardTap: () => _showLogCard(m.logId),
@@ -413,6 +481,59 @@ class _ChatScreenState extends State<ChatScreen> {
         ),
       ],
     );
+  }
+
+  Widget _dateHeader(String label) {
+    return Container(
+      alignment: Alignment.center,
+      margin: const EdgeInsets.symmetric(vertical: 10),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+        decoration: BoxDecoration(
+          color: const Color(0xFF1a2332).withOpacity(0.7),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Text(
+          label,
+          style: const TextStyle(color: Color(0xFF94a3b8), fontSize: 12),
+        ),
+      ),
+    );
+  }
+
+  /// 日期头数量
+  int _countDateHeaders() {
+    int count = 0;
+    DateTime? prev;
+    for (int i = 0; i < _messages.length; i++) {
+      final cur = _parseDay(_messages[i].createdAt);
+      if (cur == null) continue;
+      if (prev == null || !_isSameDay(cur, prev)) count++;
+      prev = cur;
+    }
+    return count;
+  }
+
+  /// displayIndex -> (日期头 or messageIndex)
+  _DisplayItem _mapDisplayIndex(int displayIndex) {
+    int remaining = displayIndex;
+    DateTime? prev;
+    for (int i = 0; i < _messages.length; i++) {
+      final cur = _parseDay(_messages[i].createdAt);
+      if (cur == null) {
+        if (remaining == 0) return _DisplayItem.message(i);
+        remaining--;
+        continue;
+      }
+      if (prev == null || !_isSameDay(cur, prev)) {
+        if (remaining == 0) return _DisplayItem.header(_formatDayLabel(_messages[i].createdAt));
+        remaining--;
+      }
+      if (remaining == 0) return _DisplayItem.message(i);
+      remaining--;
+      prev = cur;
+    }
+    return _DisplayItem.message(0);
   }
 
   /* ============ 聊天记录搜索 ============ */

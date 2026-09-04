@@ -7,6 +7,7 @@ import 'auth_service.dart';
 typedef MessageHandler = void Function(Map<String, dynamic> message);
 typedef VoidHandler = void Function();
 typedef ErrorHandler = void Function(String message);
+typedef RecallAckHandler = void Function(String requestId, bool success, String message);
 
 /// Socket.IO 客户端封装
 class SocketService {
@@ -20,6 +21,7 @@ class SocketService {
 
   final Set<MessageHandler> _messageHandlers = {};
   final Set<MessageHandler> _recallHandlers = {};
+  final Set<RecallAckHandler> _recallAckHandlers = {};
   final Set<VoidHandler> _connectHandlers = {};
   final Set<VoidHandler> _disconnectHandlers = {};
   final Set<ErrorHandler> _errorHandlers = {};
@@ -104,6 +106,19 @@ class SocketService {
       }
     });
 
+    // 服务端 emit('recall_ack', {request_id, success, message})
+    _socket!.on('recall_ack', (data) {
+      if (data is Map) {
+        final m = Map<String, dynamic>.from(data);
+        final rid = (m['request_id'] ?? '').toString();
+        final ok = m['success'] as bool? ?? false;
+        final msg = (m['message'] ?? '').toString();
+        for (final h in _recallAckHandlers.toList()) {
+          h(rid, ok, msg);
+        }
+      }
+    });
+
     _socket!.connect();
   }
 
@@ -153,9 +168,20 @@ class SocketService {
     });
   }
 
-  /// 撤回消息（仅本人消息，2 分钟内）
-  void recallMessage(int messageId) {
-    _socket?.emit('recall_message', {'message_id': messageId});
+  /// 撤回消息（仅本人消息，2 分钟内）。带 request_id 便于 ack 确认。
+  void recallMessage(int messageId, {String? requestId}) {
+    final data = <String, dynamic>{'message_id': messageId};
+    if (requestId != null) data['request_id'] = requestId;
+    _socket?.emit('recall_message', data);
+  }
+
+  /// 注册撤回 ack 监听器（收到后端 recall_ack 时触发）
+  void onRecallAck(RecallAckHandler h) {
+    _recallAckHandlers.add(h);
+  }
+
+  void offRecallAck(RecallAckHandler h) {
+    _recallAckHandlers.remove(h);
   }
 
   /// 批量标记已读
@@ -200,6 +226,7 @@ class SocketService {
     _connected = false;
     _messageHandlers.clear();
     _recallHandlers.clear();
+    _recallAckHandlers.clear();
     _connectHandlers.clear();
     _disconnectHandlers.clear();
     _errorHandlers.clear();
