@@ -31,6 +31,15 @@ class MessageBubble extends StatelessWidget {
     return me != null && me.id == message.userId;
   }
 
+  /// 是否可撤回：自己的消息且发送不超过 2 分钟（与后端普通用户时限一致，
+  /// 超时不再显示撤回入口，避免点了才报错）
+  bool get _canRecall {
+    if (!_isMine || onRecall == null || message.id == null) return false;
+    final dt = DateTime.tryParse(message.createdAt);
+    if (dt == null) return true; // 时间解析失败不拦截，交由后端判定
+    return DateTime.now().difference(dt).inSeconds < 120;
+  }
+
   @override
   Widget build(BuildContext context) {
     final isMine = _isMine;
@@ -60,9 +69,7 @@ class MessageBubble extends StatelessWidget {
     }
 
     return GestureDetector(
-      onLongPress: isMine && onRecall != null
-          ? () => _showRecallMenu(context)
-          : null,
+      onLongPress: _canRecall ? () => _showRecallMenu(context) : null,
       child: Container(
         margin: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
         child: Row(
@@ -130,8 +137,8 @@ class MessageBubble extends StatelessWidget {
 
   void _showImageMenu(BuildContext context, String url) {
     final actions = <Widget>[];
-    // 自己的消息且可撤回 → 加撤回选项
-    if (_isMine && onRecall != null && message.id != null) {
+    // 自己的消息且发送不超过 2 分钟 → 加撤回选项
+    if (_canRecall) {
       actions.add(ListTile(
         leading: const Icon(Icons.undo, color: Color(0xFFef4444)),
         title: const Text('撤回消息', style: TextStyle(color: Color(0xFFef4444))),
