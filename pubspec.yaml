@@ -23,6 +23,9 @@ dependencies:
   # 地理位置
   geolocator: ^12.0.0
 
+  # 打开系统地图/浏览器导航（高德 URI）
+  url_launcher: ^6.2.0
+
   # 路径提供
   path_provider: ^2.1.1
 

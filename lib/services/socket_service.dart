@@ -181,6 +181,16 @@ class SocketService {
     });
   }
 
+  /// 发送定位（WGS84 原始坐标；高德 URI 用 coordinate=gps 自动转换，不偏移）
+  void sendLocation(int projectId,
+      {required double lat, required double lng, String address = ''}) {
+    _socket?.emit('send_message', {
+      'project_id': projectId,
+      'content_type': 'location',
+      'content': jsonEncode({'lat': lat, 'lng': lng, 'address': address}),
+    });
+  }
+
   /// 撤回消息（仅本人消息，2 分钟内）。带 request_id 便于 ack 确认。
   void recallMessage(int messageId, {String? requestId}) {
     final data = <String, dynamic>{'message_id': messageId};

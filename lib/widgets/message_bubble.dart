@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../services/chat_service.dart';
 import '../services/auth_service.dart';
 
@@ -275,12 +276,121 @@ class MessageBubble extends StatelessWidget {
             ),
           ),
         );
+      case 'location':
+        return _locationCard(textColor, context);
       case 'text':
       default:
         return Text(
           message.content ?? '',
           style: TextStyle(color: textColor, fontSize: 14, height: 1.4),
         );
+    }
+  }
+
+  Widget _locationCard(Color textColor, BuildContext context) {
+    Map<String, dynamic>? loc;
+    try {
+      final raw = jsonDecode(message.content ?? '');
+      if (raw is Map) loc = Map<String, dynamic>.from(raw);
+    } catch (_) {}
+    final lat = (loc?['lat'] is num) ? (loc!['lat'] as num).toDouble() : null;
+    final lng = (loc?['lng'] is num) ? (loc!['lng'] as num).toDouble() : null;
+    if (lat == null || lng == null) {
+      return Text('位置消息', style: TextStyle(color: textColor));
+    }
+    final address = (loc?['address'] ?? '').toString();
+
+    return GestureDetector(
+      onTap: () => _showNavigationMenu(context, lat, lng),
+      child: Container(
+        width: 220,
+        padding: const EdgeInsets.all(10),
+        decoration: BoxDecoration(
+          color: textColor.withOpacity(0.06),
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: textColor.withOpacity(0.15)),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                color: const Color(0xFF0ea5e9),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: const Icon(Icons.location_on, color: Colors.white, size: 22),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    address.isNotEmpty ? address : '位置共享',
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: textColor,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      height: 1.3,
+                    ),
+                  ),
+                  const SizedBox(height: 3),
+                  Text(
+                    '${lat.toStringAsFixed(6)}, ${lng.toStringAsFixed(6)} · 点击导航',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(color: textColor.withOpacity(0.6), fontSize: 11),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showNavigationMenu(BuildContext context, double lat, double lng) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: const Color(0xFF1a2332),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(12)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.map, color: Color(0xFF00d4ff)),
+              title: const Text('查看位置', style: TextStyle(color: Color(0xFFf1f5f9))),
+              onTap: () {
+                Navigator.pop(ctx);
+                _launchAmap('https://uri.amap.com/marker?position=$lng,$lat&coordinate=gps&callnative=1');
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.navigation, color: Color(0xFF00d4ff)),
+              title: const Text('开始导航', style: TextStyle(color: Color(0xFFf1f5f9))),
+              onTap: () {
+                Navigator.pop(ctx);
+                _launchAmap('https://uri.amap.com/navigation?to=$lng,$lat&coordinate=gps&mode=car');
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _launchAmap(String url) async {
+    try {
+      await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
+    } catch (e) {
+      debugPrint('打开地图失败: $e');
     }
   }
 

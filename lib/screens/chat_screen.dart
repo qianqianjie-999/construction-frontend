@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:dio/dio.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:open_filex/open_filex.dart';
 import 'package:path_provider/path_provider.dart';
@@ -50,6 +51,7 @@ class _ChatScreenState extends State<ChatScreen> {
   bool _loading = false;
   bool _hasMore = true;
   bool _uploading = false;
+  bool _locating = false;
   int? _oldestId;
   bool _connected = false;
 
@@ -276,6 +278,53 @@ class _ChatScreenState extends State<ChatScreen> {
     if (text.isEmpty) return;
     SocketService().sendText(widget.project.id, text);
     _inputController.clear();
+  }
+
+  /// 采集当前位置并发送（方案二：仅 WGS84 坐标，高德 URI 用 coordinate=gps 自动转换）
+  Future<void> _sendLocation() async {
+    if (_locating) return;
+    setState(() => _locating = true);
+    try {
+      final serviceEnabled = await Geolocator.isLocationServiceEnabled();
+      if (!serviceEnabled) {
+        _toast('请先开启手机定位服务');
+        return;
+      }
+      var perm = await Geolocator.checkPermission();
+      if (perm == LocationPermission.denied) {
+        perm = await Geolocator.requestPermission();
+        if (perm == LocationPermission.denied) {
+          _toast('未授予定位权限');
+          return;
+        }
+      }
+      if (perm == LocationPermission.deniedForever) {
+        _toast('定位权限已被永久拒绝，请在系统设置中开启');
+        return;
+      }
+      _toast('正在获取定位...');
+      final pos = await Geolocator.getCurrentPosition(
+        desiredAccuracy: LocationAccuracy.high,
+        timeLimit: const Duration(seconds: 10),
+      );
+      if (!mounted) return;
+      SocketService().sendLocation(
+        widget.project.id,
+        lat: pos.latitude,
+        lng: pos.longitude,
+      );
+    } catch (e) {
+      _toast('定位失败: $e');
+    } finally {
+      if (mounted) setState(() => _locating = false);
+    }
+  }
+
+  void _toast(String msg) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(msg), duration: const Duration(seconds: 2)),
+    );
   }
 
   Future<void> _pickAndSendImage() async {
@@ -787,6 +836,8 @@ class _ChatScreenState extends State<ChatScreen> {
         return '🖼 图片消息';
       case 'log_card':
         return '📋 施工日志卡片';
+      case 'location':
+        return '📍 位置消息';
       case 'file':
         try {
           final raw = jsonDecode(m.content ?? '');
@@ -809,6 +860,8 @@ class _ChatScreenState extends State<ChatScreen> {
         return '文件';
       case 'log_card':
         return '日志卡片';
+      case 'location':
+        return '位置';
       default:
         return '文本';
     }
@@ -843,6 +896,14 @@ class _ChatScreenState extends State<ChatScreen> {
             onPressed: (_loading || _uploading) ? null : _pickAndSendImage,
             icon: const Icon(Icons.photo_library, color: Color(0xFF00d4ff)),
             tooltip: '发送图片（可多选，最多9张）',
+          ),
+          IconButton(
+            onPressed: (_loading || _uploading || _locating) ? null : _sendLocation,
+            icon: Icon(
+              _locating ? Icons.hourglass_empty : Icons.location_on,
+              color: const Color(0xFF00d4ff),
+            ),
+            tooltip: '发送我的位置（对方可点击导航）',
           ),
           Expanded(
             child: TextField(
