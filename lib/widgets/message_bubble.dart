@@ -301,47 +301,48 @@ class MessageBubble extends StatelessWidget {
     final text = (loc?['text'] ?? '').toString();
     final address = (loc?['address'] ?? '').toString();
     final title = text.isNotEmpty ? text : (address.isNotEmpty ? address : '位置共享');
+    final pinColor = _isMine ? const Color(0xFF0a0f1a) : const Color(0xFF00d4ff);
 
     return GestureDetector(
       onTap: () => _showNavigationMenu(context, lat, lng),
-      child: Container(
-        width: 220,
-        padding: const EdgeInsets.all(10),
-        decoration: BoxDecoration(
-          color: textColor.withOpacity(0.06),
-          borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: textColor.withOpacity(0.15)),
-        ),
+      child: SizedBox(
+        width: 200,
         child: Row(
           children: [
-            Container(
-              width: 40,
-              height: 40,
-              decoration: BoxDecoration(
-                color: const Color(0xFF0ea5e9),
-                borderRadius: BorderRadius.circular(8),
+            // 小地图缩略块：网格 + 定位图标
+            ClipRRect(
+              borderRadius: BorderRadius.circular(10),
+              child: Container(
+                width: 48,
+                height: 48,
+                color: textColor.withOpacity(0.08),
+                child: CustomPaint(
+                  painter: _MapGridPainter(textColor.withOpacity(0.12), step: 12),
+                  child: Center(
+                    child: Icon(Icons.location_on, color: pinColor, size: 24),
+                  ),
+                ),
               ),
-              child: const Icon(Icons.location_on, color: Colors.white, size: 22),
             ),
             const SizedBox(width: 10),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
                 children: [
                   Text(
                     title,
-                    maxLines: 2,
+                    maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
                       color: textColor,
-                      fontSize: 13,
+                      fontSize: 14,
                       fontWeight: FontWeight.w600,
-                      height: 1.3,
                     ),
                   ),
                   const SizedBox(height: 3),
                   Text(
-                    '${lat.toStringAsFixed(6)}, ${lng.toStringAsFixed(6)} · 点击导航',
+                    '${lat.toStringAsFixed(5)}, ${lng.toStringAsFixed(5)} · 点击导航',
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(color: textColor.withOpacity(0.6), fontSize: 11),
@@ -521,4 +522,28 @@ class MessageBubble extends StatelessWidget {
       return createdAt;
     }
   }
+}
+
+/// 位置卡片"伪地图"网格背景
+class _MapGridPainter extends CustomPainter {
+  final Color lineColor;
+  final double step;
+  _MapGridPainter(this.lineColor, {this.step = 16.0});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = lineColor
+      ..strokeWidth = 1;
+    for (double x = step; x < size.width; x += step) {
+      canvas.drawLine(Offset(x, 0), Offset(x, size.height), paint);
+    }
+    for (double y = step; y < size.height; y += step) {
+      canvas.drawLine(Offset(0, y), Offset(size.width, y), paint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(_MapGridPainter oldDelegate) =>
+      oldDelegate.lineColor != lineColor || oldDelegate.step != step;
 }

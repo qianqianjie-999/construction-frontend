@@ -371,30 +371,69 @@ class _ChatScreenState extends State<ChatScreen> {
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: const Color(0xFF1a2332),
-        title: const Text('发送位置', style: TextStyle(color: Color(0xFFf1f5f9))),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        titlePadding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
+        contentPadding: const EdgeInsets.fromLTRB(20, 14, 20, 0),
+        actionsPadding: const EdgeInsets.fromLTRB(20, 12, 20, 14),
+        title: const Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.location_on, color: Color(0xFF00d4ff), size: 22),
+            SizedBox(width: 8),
+            Text('发送位置', style: TextStyle(color: Color(0xFFf1f5f9), fontSize: 17)),
+          ],
+        ),
         content: TextField(
           controller: controller,
           autofocus: false,
-          style: const TextStyle(color: Color(0xFFf1f5f9)),
+          style: const TextStyle(color: Color(0xFFf1f5f9), fontSize: 14),
+          cursorColor: const Color(0xFF00d4ff),
+          onSubmitted: (v) => Navigator.pop(ctx, v.trim()),
           decoration: InputDecoration(
             hintText: '添加备注（可选）',
-            hintStyle: const TextStyle(color: Color(0xFF64748b)),
+            hintStyle: const TextStyle(color: Color(0xFF475569), fontSize: 14),
             filled: true,
             fillColor: const Color(0xFF0a0f1a),
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(8),
-              borderSide: BorderSide.none,
+            contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: const BorderSide(color: Color(0xFF334155)),
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: const BorderSide(color: Color(0xFF00d4ff), width: 1.2),
             ),
           ),
         ),
         actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('取消', style: TextStyle(color: Color(0xFF64748b))),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, controller.text.trim()),
-            child: const Text('发送', style: TextStyle(color: Color(0xFF00d4ff), fontWeight: FontWeight.bold)),
+          Row(
+            children: [
+              Expanded(
+                child: TextButton(
+                  onPressed: () => Navigator.pop(ctx),
+                  style: TextButton.styleFrom(
+                    foregroundColor: const Color(0xFF94a3b8),
+                    padding: const EdgeInsets.symmetric(vertical: 10),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                  ),
+                  child: const Text('取消'),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: ElevatedButton(
+                  onPressed: () => Navigator.pop(ctx, controller.text.trim()),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF00d4ff),
+                    foregroundColor: const Color(0xFF0a0f1a),
+                    elevation: 0,
+                    padding: const EdgeInsets.symmetric(vertical: 10),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                  ),
+                  child: const Text('发送', style: TextStyle(fontWeight: FontWeight.bold)),
+                ),
+              ),
+            ],
           ),
         ],
       ),
@@ -962,42 +1001,37 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   Widget _inputBar() {
+    final disabled = _loading || _uploading;
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+      padding: const EdgeInsets.fromLTRB(4, 6, 10, 6),
       decoration: const BoxDecoration(
         color: Color(0xFF1a2332),
         border: Border(top: BorderSide(color: Color(0xFF334155))),
       ),
       child: Row(
         children: [
-          IconButton(
-            onPressed: (_loading || _uploading) ? null : _pickAndSendFile,
-            icon: const Icon(Icons.attach_file, color: Color(0xFF00d4ff)),
-            tooltip: '发送文件（Word/Excel/PDF/DWG等）',
-          ),
-          IconButton(
-            onPressed: (_loading || _uploading) ? null : _pickAndSendImage,
-            icon: const Icon(Icons.photo_library, color: Color(0xFF00d4ff)),
-            tooltip: '发送图片（可多选，最多9张）',
-          ),
-          IconButton(
-            onPressed: (_loading || _uploading || _locating) ? null : _sendLocation,
-            icon: Icon(
-              _locating ? Icons.hourglass_empty : Icons.location_on,
-              color: const Color(0xFF00d4ff),
-            ),
-            tooltip: '发送我的位置（对方可点击导航）',
+          _inputIcon(Icons.attach_file, '发送文件（Word/Excel/PDF/DWG等）',
+              disabled ? null : _pickAndSendFile),
+          _inputIcon(Icons.photo_library, '发送图片（可多选，最多9张）',
+              disabled ? null : _pickAndSendImage),
+          _inputIcon(
+            _locating ? Icons.hourglass_empty : Icons.location_on,
+            '发送我的位置（对方可点击导航）',
+            (disabled || _locating) ? null : _sendLocation,
           ),
           Expanded(
             child: TextField(
               controller: _inputController,
-              style: const TextStyle(color: Color(0xFFf1f5f9)),
+              style: const TextStyle(color: Color(0xFFf1f5f9), fontSize: 14),
+              cursorColor: const Color(0xFF00d4ff),
               decoration: InputDecoration(
+                isDense: true,
                 hintText: '输入消息...',
                 hintStyle: const TextStyle(color: Color(0xFF64748b)),
                 filled: true,
                 fillColor: const Color(0xFF0a0f1a),
-                contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                contentPadding:
+                    const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(20),
                   borderSide: BorderSide.none,
@@ -1006,12 +1040,36 @@ class _ChatScreenState extends State<ChatScreen> {
               onSubmitted: (_) => _sendText(),
             ),
           ),
-          IconButton(
-            onPressed: _sendText,
-            icon: const Icon(Icons.send, color: Color(0xFF00d4ff)),
+          const SizedBox(width: 8),
+          // 圆形发送按钮
+          Material(
+            color: const Color(0xFF00d4ff),
+            shape: const CircleBorder(),
+            clipBehavior: Clip.antiAlias,
+            child: InkWell(
+              onTap: _sendText,
+              child: const SizedBox(
+                width: 38,
+                height: 38,
+                child:
+                    Icon(Icons.send, color: Color(0xFF0a0f1a), size: 19),
+              ),
+            ),
           ),
         ],
       ),
+    );
+  }
+
+  /// 输入栏紧凑功能按钮
+  Widget _inputIcon(IconData icon, String tooltip, VoidCallback? onPressed) {
+    return IconButton(
+      onPressed: onPressed,
+      tooltip: tooltip,
+      icon: Icon(icon, size: 22, color: const Color(0xFF00d4ff)),
+      visualDensity: VisualDensity.compact,
+      padding: EdgeInsets.zero,
+      constraints: const BoxConstraints(minWidth: 38, minHeight: 38),
     );
   }
 
