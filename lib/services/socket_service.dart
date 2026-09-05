@@ -28,9 +28,17 @@ class SocketService {
 
   /// 连接 Socket.IO
   void connect() async {
-    if (_socket != null) return;
     final user = AuthService().currentUser;
     if (user == null) return;
+
+    // 已连接则跳过；若存在死连接（_socket 非空但未连接），先清理再重建
+    if (_socket != null && _connected) return;
+    if (_socket != null) {
+      debugPrint('Socket.IO 检测到未连接 socket，重建中...');
+      _socket!.dispose();
+      _socket = null;
+      _connected = false;
+    }
 
     final base = ApiService.instance.baseUrl;
 
@@ -47,6 +55,10 @@ class SocketService {
       IO.OptionBuilder()
           .setTransports(['websocket'])  // Android 只支持 WebSocket
           .disableAutoConnect()
+          .enableReconnection()
+          .setReconnectionAttempts(1000000)
+          .setReconnectionDelay(1000)
+          .setReconnectionDelayMax(5000)
           .setExtraHeaders({'Authorization': 'Bearer ${user.token}'})
           .enableForceNewConnection()
           .build(),
