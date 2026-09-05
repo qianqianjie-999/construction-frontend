@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math';
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
@@ -20,6 +21,45 @@ import '../services/watermark_service.dart';
 import '../widgets/chat_context_viewer.dart';
 import '../widgets/chat_download_dialog.dart';
 import '../widgets/message_bubble.dart';
+
+/// WGS84 → GCJ02（火星坐标）转换。高德地图使用 GCJ02，
+/// 而 GPS 返回 WGS84，直接传给高德会偏 300~600 米。
+(double, double) _wgs84ToGcj02(double lat, double lng) {
+  const a = 6378245.0;
+  const ee = 0.00669342162296594323;
+  bool outOfChina(double la, double lo) =>
+      lo < 72.004 || lo > 137.8347 || la < 0.8293 || la > 55.8271;
+
+  if (outOfChina(lat, lng)) return (lat, lng);
+
+  double transformLat(double x, double y) {
+    var ret = -100.0 + 2.0 * x + 3.0 * y + 0.2 * y * y + 0.1 * x * y +
+        0.2 * sqrt(x.abs());
+    ret += (20.0 * sin(6.0 * x * pi) + 20.0 * sin(2.0 * x * pi)) * 2.0 / 3.0;
+    ret += (20.0 * sin(y * pi) + 40.0 * sin(y / 3.0 * pi)) * 2.0 / 3.0;
+    ret += (160.0 * sin(y / 12.0 * pi) + 320.0 * sin(y * pi / 30.0)) * 2.0 / 3.0;
+    return ret;
+  }
+
+  double transformLon(double x, double y) {
+    var ret = 300.0 + x + 2.0 * y + 0.1 * x * x + 0.1 * x * y +
+        0.1 * sqrt(x.abs());
+    ret += (20.0 * sin(6.0 * x * pi) + 20.0 * sin(2.0 * x * pi)) * 2.0 / 3.0;
+    ret += (20.0 * sin(x * pi) + 40.0 * sin(x / 3.0 * pi)) * 2.0 / 3.0;
+    ret += (150.0 * sin(x / 12.0 * pi) + 300.0 * sin(x / 30.0 * pi)) * 2.0 / 3.0;
+    return ret;
+  }
+
+  final dLat = transformLat(lng - 105.0, lat - 35.0);
+  final dLon = transformLon(lng - 105.0, lat - 35.0);
+  final radLat = lat / 180.0 * pi;
+  var magic = sin(radLat);
+  magic = 1 - ee * magic * magic;
+  final sqrtMagic = sqrt(magic);
+  final mgLat = lat + (dLat * 180.0) / ((a * (1 - ee)) / (magic * sqrtMagic) * pi);
+  final mgLon = lng + (dLon * 180.0) / (a / sqrtMagic * cos(radLat) * pi);
+  return (mgLat, mgLon);
+}
 
 /// 列表显示项：日期头 或 消息
 class _DisplayItem {
@@ -280,9 +320,11 @@ class _ChatScreenState extends State<ChatScreen> {
     _inputController.clear();
   }
 
-  /// 采集当前位置并发送（方案二：仅 WGS84 坐标，高德 URI 用 coordinate=gps 自动转换）
+  /// 采集当前位置并发送。坐标做 WGS84→GCJ02 转换后传给高德，避免偏移。
   Future<void> _sendLocation() async {
     if (_locating) return;
+    final note = await _promptLocationNote();
+    if (note == null) return; // 用户取消
     setState(() => _locating = true);
     try {
       final serviceEnabled = await Geolocator.isLocationServiceEnabled();
@@ -308,16 +350,57 @@ class _ChatScreenState extends State<ChatScreen> {
         timeLimit: const Duration(seconds: 10),
       );
       if (!mounted) return;
+      final (gcjLat, gcjLng) = _wgs84ToGcj02(pos.latitude, pos.longitude);
       SocketService().sendLocation(
         widget.project.id,
-        lat: pos.latitude,
-        lng: pos.longitude,
+        lat: gcjLat,
+        lng: gcjLng,
+        text: note,
       );
     } catch (e) {
       _toast('定位失败: $e');
     } finally {
       if (mounted) setState(() => _locating = false);
     }
+  }
+
+  /// 弹窗输入定位备注（可为空）
+  Future<String?> _promptLocationNote() async {
+    final controller = TextEditingController();
+    final result = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF1a2332),
+        title: const Text('发送位置', style: TextStyle(color: Color(0xFFf1f5f9))),
+        content: TextField(
+          controller: controller,
+          autofocus: false,
+          style: const TextStyle(color: Color(0xFFf1f5f9)),
+          decoration: InputDecoration(
+            hintText: '添加备注（可选）',
+            hintStyle: const TextStyle(color: Color(0xFF64748b)),
+            filled: true,
+            fillColor: const Color(0xFF0a0f1a),
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(8),
+              borderSide: BorderSide.none,
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('取消', style: TextStyle(color: Color(0xFF64748b))),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, controller.text.trim()),
+            child: const Text('发送', style: TextStyle(color: Color(0xFF00d4ff), fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
+    return result;
   }
 
   void _toast(String msg) {

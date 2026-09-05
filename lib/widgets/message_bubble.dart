@@ -298,7 +298,9 @@ class MessageBubble extends StatelessWidget {
     if (lat == null || lng == null) {
       return Text('位置消息', style: TextStyle(color: textColor));
     }
+    final text = (loc?['text'] ?? '').toString();
     final address = (loc?['address'] ?? '').toString();
+    final title = text.isNotEmpty ? text : (address.isNotEmpty ? address : '位置共享');
 
     return GestureDetector(
       onTap: () => _showNavigationMenu(context, lat, lng),
@@ -327,7 +329,7 @@ class MessageBubble extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    address.isNotEmpty ? address : '位置共享',
+                    title,
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
@@ -369,7 +371,7 @@ class MessageBubble extends StatelessWidget {
               title: const Text('查看位置', style: TextStyle(color: Color(0xFFf1f5f9))),
               onTap: () {
                 Navigator.pop(ctx);
-                _launchAmap('https://uri.amap.com/marker?position=$lng,$lat&coordinate=gps&callnative=1');
+                _launchAmap('https://uri.amap.com/marker?position=$lng,$lat&coordinate=gaode&callnative=1');
               },
             ),
             ListTile(
@@ -377,7 +379,7 @@ class MessageBubble extends StatelessWidget {
               title: const Text('开始导航', style: TextStyle(color: Color(0xFFf1f5f9))),
               onTap: () {
                 Navigator.pop(ctx);
-                _launchAmap('https://uri.amap.com/navigation?to=$lng,$lat&coordinate=gps&mode=car');
+                _launchAmap('https://uri.amap.com/navigation?to=$lng,$lat&coordinate=gaode&mode=car');
               },
             ),
           ],

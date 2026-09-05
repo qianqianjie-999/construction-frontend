@@ -181,13 +181,13 @@ class SocketService {
     });
   }
 
-  /// 发送定位（WGS84 原始坐标；高德 URI 用 coordinate=gps 自动转换，不偏移）
+  /// 发送定位（GCJ02 高德坐标，前端已做 WGS84→GCJ02 转换；text 为可选备注）
   void sendLocation(int projectId,
-      {required double lat, required double lng, String address = ''}) {
+      {required double lat, required double lng, String text = ''}) {
     _socket?.emit('send_message', {
       'project_id': projectId,
       'content_type': 'location',
-      'content': jsonEncode({'lat': lat, 'lng': lng, 'address': address}),
+      'content': jsonEncode({'lat': lat, 'lng': lng, 'text': text}),
     });
   }
 
