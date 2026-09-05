@@ -118,8 +118,8 @@ class _ChatScreenState extends State<ChatScreen> {
         } else {
           // 滚动位置保持
           final oldScrollOffset = _scrollController.hasClients ? _scrollController.offset : 0;
-          // 在前面插入
-          _messages.insertAll(0, msgs.reversed);
+          // 后端返回升序（旧→新），直接插到头部，保持整列表升序（最新在底部）
+          _messages.insertAll(0, msgs);
           _oldestId = msgs.first.id;
           WidgetsBinding.instance.addPostFrameCallback((_) {
             if (_scrollController.hasClients) {
