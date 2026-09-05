@@ -59,6 +59,49 @@ class ApiService {
         return handler.next(error);
       },
     ));
+
+    // 网络抖动自动重试（仅 GET 幂等请求）
+    // 场景：宽带凌晨重拨/frp 隧道瞬断约 1 分钟，nginx 返回 502 或连接被重置
+    // 重试节奏：3s、8s、15s、20s（累计约 46 秒，覆盖隧道恢复窗口）
+    _dio.interceptors.add(InterceptorsWrapper(
+      onError: (error, handler) async {
+        final options = error.requestOptions;
+        final isGet = options.method.toUpperCase() == 'GET';
+        const retryableTypes = [
+          DioExceptionType.connectionTimeout,
+          DioExceptionType.connectionError,
+          DioExceptionType.receiveTimeout,
+          DioExceptionType.badResponse,
+        ];
+        final status = error.response?.statusCode;
+        final retryableStatus = status == 502 || status == 503 || status == 504;
+        final canRetry = isGet &&
+            retryableTypes.contains(error.type) &&
+            (error.type != DioExceptionType.badResponse || retryableStatus);
+
+        const delays = [
+          Duration(seconds: 3),
+          Duration(seconds: 8),
+          Duration(seconds: 15),
+          Duration(seconds: 20),
+        ];
+        final attempt = (options.extra['retry_attempt'] as int?) ?? 0;
+
+        if (canRetry && attempt < delays.length) {
+          debugPrint('网络请求失败(${status ?? error.type.name})，'
+              '${delays[attempt].inSeconds}s 后第 ${attempt + 1} 次重试: ${options.path}');
+          await Future.delayed(delays[attempt]);
+          options.extra['retry_attempt'] = attempt + 1;
+          try {
+            final response = await _dio.fetch(options);
+            return handler.resolve(response);
+          } catch (e) {
+            return handler.next(e is DioException ? e : error);
+          }
+        }
+        return handler.next(error);
+      },
+    ));
   }
 
   Future<List<Project>> getProjects() async {
