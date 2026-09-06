@@ -416,7 +416,14 @@ class _ChatScreenState extends State<ChatScreen> {
 
       final text = textParts.join('\n\n——————\n\n');
       if (files.isNotEmpty) {
-        await Share.shareXFiles(files, text: text);
+        // 微信等应用在"文件分享"时会丢弃附带文字，把文字/点位内容写成
+        // txt 文件一起发送，保证不丢
+        if (text.isNotEmpty) {
+          final txtPath = '${tmpDir.path}/forwarded_messages_${DateTime.now().millisecondsSinceEpoch}.txt';
+          await File(txtPath).writeAsString(text);
+          files.add(XFile(txtPath, mimeType: 'text/plain'));
+        }
+        await Share.shareXFiles(files);
       } else if (text.isNotEmpty) {
         await Share.share(text);
       } else {
