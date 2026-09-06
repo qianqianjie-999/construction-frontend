@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:dio/dio.dart';
 import 'package:construction_app/main.dart' show AppColors;
 import '../services/auth_service.dart';
-import '../services/api_service.dart';
 import 'project_list_screen.dart';
 
 /// 登录页面
@@ -101,8 +100,6 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
                   _buildHeader(),
                   const SizedBox(height: 32),
                   _buildFormCard(),
-                  const SizedBox(height: 24),
-                  _buildHintCard(),
                 ],
               ),
             ),
@@ -270,37 +267,4 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
     );
   }
 
-  Widget _buildHintCard() {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      decoration: BoxDecoration(
-        color: AppColors.card,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: AppColors.border),
-      ),
-      child: Row(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(8),
-            decoration: BoxDecoration(
-              color: AppColors.primary.withOpacity(0.15),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: const Icon(Icons.info_outline, color: AppColors.primary, size: 16),
-          ),
-          const SizedBox(width: 12),
-          const Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('默认管理员', style: TextStyle(color: AppColors.textSub, fontSize: 12)),
-                SizedBox(height: 2),
-                Text('admin / admin123', style: TextStyle(color: AppColors.primary, fontSize: 13, fontWeight: FontWeight.w600)),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
 }
