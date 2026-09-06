@@ -15,14 +15,14 @@ class MessageBubble extends StatelessWidget {
   final ValueChanged<String>? onImageTap;
   final ValueChanged<String>? onImageLongPress;
   final ValueChanged<ChatMessage>? onFileTap;
-  final ValueChanged<int>? onRecall;  // 撤回回调
+  final ValueChanged<int>? onRecall; // 撤回回调
   final bool highlight; // 搜索结果定位时高亮边框
 
   // 多选转发模式
-  final bool selectionMode;           // 是否处于多选模式
-  final bool selected;                // 本条是否被选中
-  final ValueChanged<int>? onToggleSelect;  // 点击切换选中
-  final VoidCallback? onEnterMultiSelect;   // 长按菜单选"多选"后进入多选模式
+  final bool selectionMode; // 是否处于多选模式
+  final bool selected; // 本条是否被选中
+  final ValueChanged<int>? onToggleSelect; // 点击切换选中
+  final VoidCallback? onEnterMultiSelect; // 长按菜单选"多选"后进入多选模式
 
   const MessageBubble({
     super.key,
@@ -57,15 +57,18 @@ class MessageBubble extends StatelessWidget {
   Widget build(BuildContext context) {
     final isMine = _isMine;
     final align = isMine ? CrossAxisAlignment.end : CrossAxisAlignment.start;
-    final bubbleColor = isMine ? const Color(0xFF00d4ff) : const Color(0xFF1a2332);
-    final textColor = isMine ? const Color(0xFF0a0f1a) : const Color(0xFFf1f5f9);
+    final bubbleColor =
+        isMine ? const Color(0xFF00d4ff) : const Color(0xFF1a2332);
+    final textColor =
+        isMine ? const Color(0xFF0a0f1a) : const Color(0xFFf1f5f9);
 
     // 已撤回消息：显示灰色提示
     if (message.recalled) {
       return Container(
         margin: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
         child: Row(
-          mainAxisAlignment: isMine ? MainAxisAlignment.end : MainAxisAlignment.start,
+          mainAxisAlignment:
+              isMine ? MainAxisAlignment.end : MainAxisAlignment.start,
           children: [
             if (!isMine) _avatar(),
             Container(
@@ -73,7 +76,10 @@ class MessageBubble extends StatelessWidget {
               padding: const EdgeInsets.all(10),
               child: Text(
                 '${isMine ? "你" : message.nickname}撤回了一条消息',
-                style: const TextStyle(color: Color(0xFF64748b), fontSize: 13, fontStyle: FontStyle.italic),
+                style: const TextStyle(
+                    color: Color(0xFF64748b),
+                    fontSize: 13,
+                    fontStyle: FontStyle.italic),
               ),
             ),
           ],
@@ -84,40 +90,42 @@ class MessageBubble extends StatelessWidget {
     final row = Container(
       margin: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
       child: Row(
-        mainAxisAlignment: isMine ? MainAxisAlignment.end : MainAxisAlignment.start,
+        mainAxisAlignment:
+            isMine ? MainAxisAlignment.end : MainAxisAlignment.start,
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
           if (selectionMode && !isMine) _selectCheck(),
           if (!isMine) _avatar(),
           Expanded(
-              child: Column(
-                crossAxisAlignment: align,
-                children: [
-                  if (!isMine)
-                    Padding(
-                      padding: const EdgeInsets.only(left: 8, bottom: 2),
-                      child: Text(
-                        message.nickname,
-                        style: const TextStyle(color: Color(0xFF94a3b8), fontSize: 12),
-                      ),
+            child: Column(
+              crossAxisAlignment: align,
+              children: [
+                if (!isMine)
+                  Padding(
+                    padding: const EdgeInsets.only(left: 8, bottom: 2),
+                    child: Text(
+                      message.nickname,
+                      style: const TextStyle(
+                          color: Color(0xFF94a3b8), fontSize: 12),
                     ),
-                  Container(
-                    constraints: const BoxConstraints(maxWidth: 280),
-                    padding: const EdgeInsets.all(10),
-                    decoration: BoxDecoration(
-                      color: bubbleColor,
-                      borderRadius: BorderRadius.only(
-                        topLeft: const Radius.circular(12),
-                        topRight: const Radius.circular(12),
-                        bottomLeft: Radius.circular(isMine ? 12 : 2),
-                        bottomRight: Radius.circular(isMine ? 2 : 12),
-                      ),
-                      border: highlight
-                          ? Border.all(color: const Color(0xFFfbbf24), width: 2)
-                          : null,
-                    ),
-                    child: _content(textColor, context),
                   ),
+                Container(
+                  constraints: const BoxConstraints(maxWidth: 280),
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: bubbleColor,
+                    borderRadius: BorderRadius.only(
+                      topLeft: const Radius.circular(12),
+                      topRight: const Radius.circular(12),
+                      bottomLeft: Radius.circular(isMine ? 12 : 2),
+                      bottomRight: Radius.circular(isMine ? 2 : 12),
+                    ),
+                    border: highlight
+                        ? Border.all(color: const Color(0xFFfbbf24), width: 2)
+                        : null,
+                  ),
+                  child: _content(textColor, context),
+                ),
                 if (highlight)
                   Padding(
                     padding: const EdgeInsets.only(left: 8, top: 2, right: 8),
@@ -134,7 +142,8 @@ class MessageBubble extends StatelessWidget {
                   padding: const EdgeInsets.only(left: 8, top: 2, right: 8),
                   child: Text(
                     _formatTime(message.createdAt),
-                    style: const TextStyle(color: Color(0xFF64748b), fontSize: 10),
+                    style:
+                        const TextStyle(color: Color(0xFF64748b), fontSize: 10),
                   ),
                 ),
               ],
@@ -151,7 +160,8 @@ class MessageBubble extends StatelessWidget {
     if (selectionMode) {
       return GestureDetector(
         behavior: HitTestBehavior.opaque,
-        onTap: message.id == null ? null : () => onToggleSelect?.call(message.id!),
+        onTap:
+            message.id == null ? null : () => onToggleSelect?.call(message.id!),
         child: IgnorePointer(ignoring: true, child: row),
       );
     }
@@ -237,7 +247,8 @@ class MessageBubble extends StatelessWidget {
       builder: (ctx) => AlertDialog(
         backgroundColor: const Color(0xFF1a2332),
         title: const Text('消息操作', style: TextStyle(color: Color(0xFFf1f5f9))),
-        content: const Text('确定要撤回这条消息吗？', style: TextStyle(color: Color(0xFF94a3b8))),
+        content: const Text('确定要撤回这条消息吗？',
+            style: TextStyle(color: Color(0xFF94a3b8))),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
@@ -248,7 +259,9 @@ class MessageBubble extends StatelessWidget {
               Navigator.pop(ctx);
               onRecall?.call(message.id!);
             },
-            child: const Text('撤回', style: TextStyle(color: Color(0xFFef4444), fontWeight: FontWeight.bold)),
+            child: const Text('撤回',
+                style: TextStyle(
+                    color: Color(0xFFef4444), fontWeight: FontWeight.bold)),
           ),
         ],
       ),
@@ -292,11 +305,13 @@ class MessageBubble extends StatelessWidget {
     } else if (message.contentType == 'location') {
       actions.add(ListTile(
         leading: const Icon(Icons.share, color: Color(0xFF00d4ff)),
-        title: const Text('分享位置（微信/短信等）', style: TextStyle(color: Color(0xFFf1f5f9))),
+        title: const Text('分享位置（微信/短信等）',
+            style: TextStyle(color: Color(0xFFf1f5f9))),
         onTap: () {
           Navigator.pop(context);
           final loc = _parseLocation();
-          if (loc != null) _shareLocation(loc.lat, loc.lng, loc.title, loc.address);
+          if (loc != null)
+            _shareLocation(loc.lat, loc.lng, loc.title, loc.address);
         },
       ));
     }
@@ -335,7 +350,8 @@ class MessageBubble extends StatelessWidget {
       if (lat == null || lng == null) return null;
       final text = (raw['text'] ?? '').toString();
       final address = (raw['address'] ?? '').toString();
-      final title = text.isNotEmpty ? text : (address.isNotEmpty ? address : '位置共享');
+      final title =
+          text.isNotEmpty ? text : (address.isNotEmpty ? address : '位置共享');
       return (lat: lat, lng: lng, title: title, address: address);
     } catch (_) {
       return null;
@@ -352,7 +368,8 @@ class MessageBubble extends StatelessWidget {
     final path = (meta?['path'] ?? '').toString();
     final name = (meta?['name'] ?? path).toString();
     if (path.isEmpty) return;
-    await _downloadAndShare(context, ChatService().fileUrl(path, name: name), name);
+    await _downloadAndShare(
+        context, ChatService().fileUrl(path, name: name), name);
   }
 
   /// 转发图片：下载到临时目录后调系统分享
@@ -363,12 +380,14 @@ class MessageBubble extends StatelessWidget {
   }
 
   /// 下载远程文件到临时目录并调起系统分享面板
-  Future<void> _downloadAndShare(BuildContext context, String url, String fileName) async {
+  Future<void> _downloadAndShare(
+      BuildContext context, String url, String fileName) async {
     final messenger = ScaffoldMessenger.of(context);
     try {
       final dir = await getTemporaryDirectory();
       final safeName = fileName.replaceAll(RegExp(r'[\\/:*?"<>|]'), '_');
-      final savePath = '${dir.path}/share_${DateTime.now().millisecondsSinceEpoch}_$safeName';
+      final savePath =
+          '${dir.path}/share_${DateTime.now().millisecondsSinceEpoch}_$safeName';
       messenger.showSnackBar(const SnackBar(
         content: Text('正在准备文件，请稍候…'),
         duration: Duration(seconds: 1),
@@ -395,7 +414,8 @@ class MessageBubble extends StatelessWidget {
       child: Center(
         child: Text(
           message.nickname.isNotEmpty ? message.nickname.characters.first : '?',
-          style: const TextStyle(color: Color(0xFF00d4ff), fontWeight: FontWeight.bold),
+          style: const TextStyle(
+              color: Color(0xFF00d4ff), fontWeight: FontWeight.bold),
         ),
       ),
     );
@@ -433,15 +453,37 @@ class MessageBubble extends StatelessWidget {
                     child: SizedBox(
                       width: 22,
                       height: 22,
-                      child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF00d4ff)),
+                      child: CircularProgressIndicator(
+                          strokeWidth: 2, color: Color(0xFF00d4ff)),
                     ),
                   ),
                 ),
-                errorWidget: (_, __, ___) => Container(
-                  width: 200,
-                  height: 100,
-                  color: Colors.black26,
-                  child: const Icon(Icons.broken_image, color: Color(0xFF94a3b8)),
+                errorWidget: (_, __, ___) =>
+                    // 兜底：旧版后端没有 thumb 路由（404）时回退加载原图
+                    CachedNetworkImage(
+                  imageUrl: fullUrl,
+                  fit: BoxFit.contain,
+                  memCacheWidth: 600,
+                  placeholder: (_, __) => Container(
+                    width: 200,
+                    height: 120,
+                    color: Colors.black26,
+                    child: const Center(
+                      child: SizedBox(
+                        width: 22,
+                        height: 22,
+                        child: CircularProgressIndicator(
+                            strokeWidth: 2, color: Color(0xFF00d4ff)),
+                      ),
+                    ),
+                  ),
+                  errorWidget: (_, __, ___) => Container(
+                    width: 200,
+                    height: 100,
+                    color: Colors.black26,
+                    child: const Icon(Icons.broken_image,
+                        color: Color(0xFF94a3b8)),
+                  ),
                 ),
               ),
             ),
@@ -462,13 +504,18 @@ class MessageBubble extends StatelessWidget {
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                const Icon(Icons.description, size: 32, color: Color(0xFF00d4ff)),
+                const Icon(Icons.description,
+                    size: 32, color: Color(0xFF00d4ff)),
                 const SizedBox(width: 8),
                 Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('施工日志', style: TextStyle(color: textColor, fontWeight: FontWeight.bold)),
-                    Text('点击查看', style: TextStyle(color: textColor.withOpacity(0.7), fontSize: 12)),
+                    Text('施工日志',
+                        style: TextStyle(
+                            color: textColor, fontWeight: FontWeight.bold)),
+                    Text('点击查看',
+                        style: TextStyle(
+                            color: textColor.withOpacity(0.7), fontSize: 12)),
                   ],
                 ),
               ],
@@ -499,8 +546,10 @@ class MessageBubble extends StatelessWidget {
     }
     final text = (loc?['text'] ?? '').toString();
     final address = (loc?['address'] ?? '').toString();
-    final title = text.isNotEmpty ? text : (address.isNotEmpty ? address : '位置共享');
-    final pinColor = _isMine ? const Color(0xFF0a0f1a) : const Color(0xFF00d4ff);
+    final title =
+        text.isNotEmpty ? text : (address.isNotEmpty ? address : '位置共享');
+    final pinColor =
+        _isMine ? const Color(0xFF0a0f1a) : const Color(0xFF00d4ff);
 
     return GestureDetector(
       onTap: () => _showNavigationMenu(context, lat, lng, title, address),
@@ -516,7 +565,8 @@ class MessageBubble extends StatelessWidget {
                 height: 48,
                 color: textColor.withOpacity(0.08),
                 child: CustomPaint(
-                  painter: _MapGridPainter(textColor.withOpacity(0.12), step: 12),
+                  painter:
+                      _MapGridPainter(textColor.withOpacity(0.12), step: 12),
                   child: Center(
                     child: Icon(Icons.location_on, color: pinColor, size: 24),
                   ),
@@ -544,7 +594,8 @@ class MessageBubble extends StatelessWidget {
                     '${lat.toStringAsFixed(5)}, ${lng.toStringAsFixed(5)} · 点击导航',
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: TextStyle(color: textColor.withOpacity(0.6), fontSize: 11),
+                    style: TextStyle(
+                        color: textColor.withOpacity(0.6), fontSize: 11),
                   ),
                 ],
               ),
@@ -555,7 +606,8 @@ class MessageBubble extends StatelessWidget {
     );
   }
 
-  void _showNavigationMenu(BuildContext context, double lat, double lng, String title, String address) {
+  void _showNavigationMenu(BuildContext context, double lat, double lng,
+      String title, String address) {
     showModalBottomSheet(
       context: context,
       backgroundColor: const Color(0xFF1a2332),
@@ -568,7 +620,8 @@ class MessageBubble extends StatelessWidget {
           children: [
             ListTile(
               leading: const Icon(Icons.share, color: Color(0xFF00d4ff)),
-              title: const Text('分享位置（微信/短信等）', style: TextStyle(color: Color(0xFFf1f5f9))),
+              title: const Text('分享位置（微信/短信等）',
+                  style: TextStyle(color: Color(0xFFf1f5f9))),
               onTap: () {
                 Navigator.pop(ctx);
                 _shareLocation(lat, lng, title, address);
@@ -576,18 +629,22 @@ class MessageBubble extends StatelessWidget {
             ),
             ListTile(
               leading: const Icon(Icons.map, color: Color(0xFF00d4ff)),
-              title: const Text('查看位置', style: TextStyle(color: Color(0xFFf1f5f9))),
+              title: const Text('查看位置',
+                  style: TextStyle(color: Color(0xFFf1f5f9))),
               onTap: () {
                 Navigator.pop(ctx);
-                _launchAmap('https://uri.amap.com/marker?position=$lng,$lat&coordinate=gaode&callnative=1');
+                _launchAmap(
+                    'https://uri.amap.com/marker?position=$lng,$lat&coordinate=gaode&callnative=1');
               },
             ),
             ListTile(
               leading: const Icon(Icons.navigation, color: Color(0xFF00d4ff)),
-              title: const Text('开始导航', style: TextStyle(color: Color(0xFFf1f5f9))),
+              title: const Text('开始导航',
+                  style: TextStyle(color: Color(0xFFf1f5f9))),
               onTap: () {
                 Navigator.pop(ctx);
-                _launchAmap('https://uri.amap.com/navigation?to=$lng,$lat&coordinate=gaode&mode=car');
+                _launchAmap(
+                    'https://uri.amap.com/navigation?to=$lng,$lat&coordinate=gaode&mode=car');
               },
             ),
           ],
@@ -597,8 +654,10 @@ class MessageBubble extends StatelessWidget {
   }
 
   /// 转发点位：文字 + 高德链接，外部人员在微信/短信里点开即可看位置、导航
-  Future<void> _shareLocation(double lat, double lng, String title, String address) async {
-    final mapUrl = 'https://uri.amap.com/marker?position=$lng,$lat&coordinate=gaode&callnative=1';
+  Future<void> _shareLocation(
+      double lat, double lng, String title, String address) async {
+    final mapUrl =
+        'https://uri.amap.com/marker?position=$lng,$lat&coordinate=gaode&callnative=1';
     final buf = StringBuffer('【位置共享】$title\n');
     buf.writeln('坐标：${lat.toStringAsFixed(6)}, ${lng.toStringAsFixed(6)}');
     if (address.isNotEmpty && address != title) buf.writeln('地址：$address');
@@ -668,7 +727,8 @@ class MessageBubble extends StatelessWidget {
                   const SizedBox(height: 3),
                   Text(
                     '${ext.isEmpty ? 'FILE' : ext.toUpperCase()} · ${_formatSize(size)} · 点击下载',
-                    style: TextStyle(color: textColor.withOpacity(0.6), fontSize: 11),
+                    style: TextStyle(
+                        color: textColor.withOpacity(0.6), fontSize: 11),
                   ),
                 ],
               ),
@@ -710,7 +770,8 @@ class MessageBubble extends StatelessWidget {
 
   String _formatSize(int bytes) {
     if (bytes <= 0) return '0 B';
-    if (bytes >= 1024 * 1024) return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
+    if (bytes >= 1024 * 1024)
+      return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
     if (bytes >= 1024) return '${(bytes / 1024).toStringAsFixed(1)} KB';
     return '$bytes B';
   }
@@ -727,8 +788,8 @@ class MessageBubble extends StatelessWidget {
         dt = DateTime.parse('${parts[0]}T${parts[1]}').toLocal();
       }
       final now = DateTime.now();
-      final isToday = dt.year == now.year &&
-          dt.month == now.month && dt.day == now.day;
+      final isToday =
+          dt.year == now.year && dt.month == now.month && dt.day == now.day;
       final hh = dt.hour.toString().padLeft(2, '0');
       final mm = dt.minute.toString().padLeft(2, '0');
       if (isToday) return '$hh:$mm';
