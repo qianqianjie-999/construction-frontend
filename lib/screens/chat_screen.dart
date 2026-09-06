@@ -295,8 +295,10 @@ class _ChatScreenState extends State<ChatScreen> {
         .where((m) => m.id != null && m.userId != me.id && !m.isReadByMe)
         .map((m) => m.id!)
         .toList();
+    // 用 HTTP 标记整项目已读（不依赖 socket 连接状态，防止刚登录时
+    // socket 未连上导致已读标记丢失、返回列表后未读气泡不消失）
+    ChatService().markProjectRead(widget.project.id);
     if (unreadIds.isEmpty) return;
-    SocketService().markRead(unreadIds);
     setState(() {
       for (final m in _messages) {
         if (unreadIds.contains(m.id)) {

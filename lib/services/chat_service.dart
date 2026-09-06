@@ -137,6 +137,14 @@ class ChatService {
     await _dio.post('/api/chat/messages/$messageId/read');
   }
 
+  /// 进入聊天页：标记该项目所有消息已读（HTTP 可靠，不依赖 socket 连接状态，
+  /// 避免刚登录时 socket 未连上导致已读标记丢失、未读气泡不消失）
+  Future<void> markProjectRead(int projectId) async {
+    try {
+      await _dio.post('/api/chat/messages/read_all', data: {'project_id': projectId});
+    } catch (_) {}
+  }
+
   /// 获取所有项目群的未读数：{ project_id: count }
   Future<Map<int, int>> unreadCount() async {
     final response = await _dio.get('/api/chat/messages/unread_count');
