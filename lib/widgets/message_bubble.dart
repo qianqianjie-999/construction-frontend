@@ -147,8 +147,10 @@ class MessageBubble extends StatelessWidget {
     );
 
     // 多选模式：整条消息点击切换选中，内部交互（导航/预览/长按菜单）全部禁用
+    // 必须 opaque：IgnorePointer 屏蔽子组件后，deferToChild 会导致外层也收不到点击
     if (selectionMode) {
       return GestureDetector(
+        behavior: HitTestBehavior.opaque,
         onTap: message.id == null ? null : () => onToggleSelect?.call(message.id!),
         child: IgnorePointer(ignoring: true, child: row),
       );
