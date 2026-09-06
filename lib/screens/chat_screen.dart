@@ -11,8 +11,10 @@ import 'package:geolocator/geolocator.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:open_filex/open_filex.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:share_plus/share_plus.dart';
 import 'package:uuid/uuid.dart';
 import '../models/project.dart';
+import '../services/api_service.dart';
 import '../services/auth_service.dart';
 import '../services/chat_service.dart';
 import '../services/image_save_service.dart';
@@ -94,6 +96,11 @@ class _ChatScreenState extends State<ChatScreen> {
   bool _locating = false;
   int? _oldestId;
   bool _connected = false;
+
+  // 多选转发模式
+  bool _selectionMode = false;
+  final Set<int> _selectedIds = {};
+  bool _preparingShare = false;
 
   // 搜索状态
   bool _searchMode = false;
@@ -313,6 +320,118 @@ class _ChatScreenState extends State<ChatScreen> {
         }
       }
     });
+  }
+
+  // ---------- 多选转发 ----------
+  void _enterMultiSelect(int? messageId) {
+    if (messageId == null) return;
+    setState(() {
+      _selectionMode = true;
+      _selectedIds
+        ..clear()
+        ..add(messageId);
+    });
+  }
+
+  void _toggleSelect(int messageId) {
+    setState(() {
+      if (!_selectedIds.remove(messageId)) _selectedIds.add(messageId);
+    });
+  }
+
+  void _exitMultiSelect() {
+    setState(() {
+      _selectionMode = false;
+      _selectedIds.clear();
+    });
+  }
+
+  /// 多选后转发：文本/点位拼成文字，图片/文件下载后以文件形式一起分享
+  Future<void> _forwardSelected() async {
+    final selected = _messages
+        .where((m) => m.id != null && _selectedIds.contains(m.id) && !m.recalled)
+        .toList();
+    if (selected.isEmpty) return;
+
+    setState(() => _preparingShare = true);
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      final textParts = <String>[];
+      final files = <XFile>[];
+      final tmpDir = await getTemporaryDirectory();
+      var seq = 0;
+
+      for (final m in selected) {
+        seq++;
+        switch (m.contentType) {
+          case 'text':
+            final t = (m.content ?? '').trim();
+            if (t.isNotEmpty) textParts.add(t);
+            break;
+          case 'location':
+            try {
+              final loc = jsonDecode(m.content ?? '') as Map;
+              final lat = loc['lat'];
+              final lng = loc['lng'];
+              if (lat is num && lng is num) {
+                final title = (loc['text'] ?? loc['address'] ?? '位置共享').toString();
+                textParts.add(
+                  '【位置共享】$title\n'
+                  '坐标：${lat.toStringAsFixed(6)}, ${lng.toStringAsFixed(6)}\n'
+                  '点击查看位置/导航：https://uri.amap.com/marker?position=$lng,$lat&coordinate=gaode&callnative=1',
+                );
+              }
+            } catch (_) {}
+            break;
+          case 'image':
+            final fname = m.content ?? '';
+            if (fname.isNotEmpty) {
+              final ext = fname.contains('.')
+                  ? fname.substring(fname.lastIndexOf('.'))
+                  : '.jpg';
+              final savePath = '${tmpDir.path}/share_${DateTime.now().millisecondsSinceEpoch}_$seq$ext';
+              await ApiService.instance.dio.download(ChatService().imageUrl(fname), savePath);
+              files.add(XFile(savePath));
+            }
+            break;
+          case 'file':
+            try {
+              final meta = jsonDecode(m.content ?? '') as Map;
+              final path = (meta['path'] ?? '').toString();
+              final name = (meta['name'] ?? path).toString();
+              if (path.isNotEmpty) {
+                final safeName = name.replaceAll(RegExp(r'[\\/:*?"<>|]'), '_');
+                final savePath = '${tmpDir.path}/share_${seq}_$safeName';
+                await ApiService.instance.dio.download(
+                  ChatService().fileUrl(path, name: name), savePath);
+                files.add(XFile(savePath));
+              }
+            } catch (_) {}
+            break;
+          case 'log_card':
+            textParts.add('【施工日志卡片】详情请在工程现场管理 App 内查看');
+            break;
+        }
+      }
+
+      final text = textParts.join('\n\n——————\n\n');
+      if (files.isNotEmpty) {
+        await Share.shareXFiles(files, text: text);
+      } else if (text.isNotEmpty) {
+        await Share.share(text);
+      } else {
+        messenger.showSnackBar(const SnackBar(content: Text('所选内容无法转发')));
+        return;
+      }
+      _exitMultiSelect();
+    } catch (e) {
+      messenger.showSnackBar(SnackBar(
+        content: Text('转发失败：$e'),
+        backgroundColor: const Color(0xFFef4444),
+      ));
+    } finally {
+      if (mounted) setState(() => _preparingShare = false);
+    }
   }
 
   void _sendText() {
@@ -548,11 +667,25 @@ class _ChatScreenState extends State<ChatScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+    return PopScope(
+      canPop: !_selectionMode,
+      onPopInvoked: (didPop) {
+        if (!didPop && _selectionMode) _exitMultiSelect();
+      },
+      child: Scaffold(
       backgroundColor: const Color(0xFF0a0f1a),
       appBar: AppBar(
         backgroundColor: const Color(0xFF1a2332),
-        title: Column(
+        leading: _selectionMode
+            ? IconButton(
+                icon: const Icon(Icons.close, color: Color(0xFF00d4ff)),
+                onPressed: _exitMultiSelect,
+              )
+            : null,
+        title: _selectionMode
+            ? Text('已选 ${_selectedIds.length} 条',
+                style: const TextStyle(color: Color(0xFFf1f5f9), fontSize: 16))
+            : Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
@@ -578,7 +711,14 @@ class _ChatScreenState extends State<ChatScreen> {
           ],
         ),
         iconTheme: const IconThemeData(color: Color(0xFF00d4ff)),
-        actions: [
+        actions: _selectionMode
+            ? [
+                TextButton(
+                  onPressed: _selectAllLoaded,
+                  child: const Text('全选', style: TextStyle(color: Color(0xFF00d4ff))),
+                ),
+              ]
+            : [
           IconButton(
             onPressed: _toggleSearch,
             icon: Icon(_searchMode ? Icons.chat_bubble_outline : Icons.search,
@@ -589,13 +729,57 @@ class _ChatScreenState extends State<ChatScreen> {
       ),
       body: Column(
         children: [
-          if (_searchMode) _searchHeader(),
-          Expanded(child: _searchMode ? _searchResultsView() : _chatListView()),
-          if (!_searchMode) ...[
+          if (_searchMode && !_selectionMode) _searchHeader(),
+          Expanded(child: _searchMode && !_selectionMode ? _searchResultsView() : _chatListView()),
+          if (_selectionMode)
+            _multiSelectBar()
+          else if (!_searchMode) ...[
             if (_loading || _uploading) const LinearProgressIndicator(color: Color(0xFF00d4ff)),
             _inputBar(),
           ],
         ],
+      ),
+      ),
+    );
+  }
+
+  /// 全选当前已加载的消息
+  void _selectAllLoaded() {
+    setState(() {
+      _selectedIds
+        ..clear()
+        ..addAll(_messages.where((m) => m.id != null && !m.recalled).map((m) => m.id!));
+    });
+  }
+
+  /// 多选模式底部操作栏
+  Widget _multiSelectBar() {
+    return Container(
+      padding: EdgeInsets.only(
+        left: 16, right: 16, top: 10, bottom: 10 + MediaQuery.of(context).padding.bottom,
+      ),
+      decoration: const BoxDecoration(
+        color: Color(0xFF1a2332),
+        border: Border(top: BorderSide(color: Color(0xFF2a3548))),
+      ),
+      child: SizedBox(
+        width: double.infinity,
+        child: ElevatedButton.icon(
+          onPressed: (_selectedIds.isEmpty || _preparingShare) ? null : _forwardSelected,
+          style: ElevatedButton.styleFrom(
+            backgroundColor: const Color(0xFF00d4ff),
+            foregroundColor: const Color(0xFF0a0f1a),
+            padding: const EdgeInsets.symmetric(vertical: 12),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          ),
+          icon: _preparingShare
+              ? const SizedBox(
+                  width: 18, height: 18,
+                  child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF0a0f1a)),
+                )
+              : const Icon(Icons.forward, size: 20),
+          label: Text(_preparingShare ? '正在准备文件…' : '转发给朋友（微信/QQ等）'),
+        ),
       ),
     );
   }
@@ -655,12 +839,17 @@ class _ChatScreenState extends State<ChatScreen> {
               }
               final m = _messages[mapped.messageIndex!];
               return MessageBubble(
+                key: ValueKey('bubble_${m.id}'),
                 message: m,
                 onLogCardTap: () => _showLogCard(m.logId),
                 onImageTap: (url) => _showFullImage(url),
                 onImageLongPress: (url) => _saveImage(url),
                 onFileTap: (msg) => _downloadAndOpen(msg),
                 onRecall: (id) => _recallMessage(id),
+                selectionMode: _selectionMode,
+                selected: m.id != null && _selectedIds.contains(m.id),
+                onToggleSelect: _toggleSelect,
+                onEnterMultiSelect: () => _enterMultiSelect(m.id),
               );
             },
           ),

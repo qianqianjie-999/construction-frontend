@@ -18,6 +18,12 @@ class MessageBubble extends StatelessWidget {
   final ValueChanged<int>? onRecall;  // 撤回回调
   final bool highlight; // 搜索结果定位时高亮边框
 
+  // 多选转发模式
+  final bool selectionMode;           // 是否处于多选模式
+  final bool selected;                // 本条是否被选中
+  final ValueChanged<int>? onToggleSelect;  // 点击切换选中
+  final VoidCallback? onEnterMultiSelect;   // 长按菜单选"多选"后进入多选模式
+
   const MessageBubble({
     super.key,
     required this.message,
@@ -27,6 +33,10 @@ class MessageBubble extends StatelessWidget {
     this.onFileTap,
     this.onRecall,
     this.highlight = false,
+    this.selectionMode = false,
+    this.selected = false,
+    this.onToggleSelect,
+    this.onEnterMultiSelect,
   });
 
   bool get _isMine {
@@ -71,16 +81,15 @@ class MessageBubble extends StatelessWidget {
       );
     }
 
-    return GestureDetector(
-      onLongPress: () => _showBubbleMenu(context),
-      child: Container(
-        margin: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
-        child: Row(
-          mainAxisAlignment: isMine ? MainAxisAlignment.end : MainAxisAlignment.start,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            if (!isMine) _avatar(),
-            Expanded(
+    final row = Container(
+      margin: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
+      child: Row(
+        mainAxisAlignment: isMine ? MainAxisAlignment.end : MainAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          if (selectionMode && !isMine) _selectCheck(),
+          if (!isMine) _avatar(),
+          Expanded(
               child: Column(
                 crossAxisAlignment: align,
                 children: [
@@ -132,14 +141,49 @@ class MessageBubble extends StatelessWidget {
             ),
           ),
           if (isMine) _avatar(),
+          if (selectionMode && isMine) _selectCheck(),
         ],
       ),
+    );
+
+    // 多选模式：整条消息点击切换选中，内部交互（导航/预览/长按菜单）全部禁用
+    if (selectionMode) {
+      return GestureDetector(
+        onTap: message.id == null ? null : () => onToggleSelect?.call(message.id!),
+        child: IgnorePointer(ignoring: true, child: row),
+      );
+    }
+    return GestureDetector(
+      onLongPress: () => _showBubbleMenu(context),
+      child: row,
+    );
+  }
+
+  /// 多选模式下的选中圆圈
+  Widget _selectCheck() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 6),
+      child: Icon(
+        selected ? Icons.check_circle : Icons.radio_button_unchecked,
+        color: selected ? const Color(0xFF00d4ff) : const Color(0xFF64748b),
+        size: 22,
       ),
     );
   }
 
   void _showImageMenu(BuildContext context, String url) {
     final actions = <Widget>[];
+    // 多选（批量转发）
+    if (message.id != null && onEnterMultiSelect != null) {
+      actions.add(ListTile(
+        leading: const Icon(Icons.checklist, color: Color(0xFF00d4ff)),
+        title: const Text('多选', style: TextStyle(color: Color(0xFFf1f5f9))),
+        onTap: () {
+          Navigator.pop(context);
+          onEnterMultiSelect!.call();
+        },
+      ));
+    }
     // 转发图片（下载到临时目录后调系统分享面板）
     actions.add(ListTile(
       leading: const Icon(Icons.forward, color: Color(0xFF00d4ff)),
@@ -213,6 +257,17 @@ class MessageBubble extends StatelessWidget {
   /// 图片长按走自己的菜单、点位点按走导航菜单，这里主要覆盖文本/文件/点位长按
   void _showBubbleMenu(BuildContext context) {
     final actions = <Widget>[];
+
+    if (message.id != null && onEnterMultiSelect != null) {
+      actions.add(ListTile(
+        leading: const Icon(Icons.checklist, color: Color(0xFF00d4ff)),
+        title: const Text('多选', style: TextStyle(color: Color(0xFFf1f5f9))),
+        onTap: () {
+          Navigator.pop(context);
+          onEnterMultiSelect!.call();
+        },
+      ));
+    }
 
     if (message.contentType == 'text' && (message.content ?? '').isNotEmpty) {
       actions.add(ListTile(
