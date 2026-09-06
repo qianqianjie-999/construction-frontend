@@ -8,10 +8,12 @@ import '../models/construction_log.dart';
 
 class ApiService {
   // 默认 API 基础 URL
-  // 优先级：运行时 setBaseUrl() > 编译期 --dart-define=API_BASE_URL > 默认 localhost
+  // 优先级：运行时 setBaseUrl()（登录页"服务器地址"）> 编译期 --dart-define=API_BASE_URL > 占位地址
+  // 自建部署打包示例：
+  //   flutter build apk --release --dart-define=API_BASE_URL=https://你的服务器IP:9304
   static const String _defaultBaseUrl = String.fromEnvironment(
     'API_BASE_URL',
-    defaultValue: 'https://123.57.86.80:9304',
+    defaultValue: 'https://your-server-ip:9304',
   );
 
   final Dio _dio;
