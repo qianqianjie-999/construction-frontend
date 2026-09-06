@@ -419,6 +419,10 @@ class MessageBubble extends StatelessWidget {
               child: CachedNetworkImage(
                 imageUrl: fullUrl,
                 fit: BoxFit.contain,
+                // 气泡显示宽约 220 逻辑像素，按 600 物理像素解码即可，
+                // 避免 1280px 全尺寸解码占用 ~5MB/张内存（快速滑动多图时尤明显）。
+                // 点开全屏预览走独立页面全尺寸加载，不受影响。
+                memCacheWidth: 600,
                 placeholder: (_, __) => Container(
                   width: 200,
                   height: 120,
