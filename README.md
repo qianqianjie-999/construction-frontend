@@ -1,5 +1,7 @@
 <div align="center">
 
+<img src="docs/cover.png" width="720" alt="工程现场施工管理系统">
+
 # 🏗️ 工程现场施工管理系统 · Flutter App
 
 ### 施工日志填报 + 现场水印照片 + 项目群聊，配合自部署后端使用
