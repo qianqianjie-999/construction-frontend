@@ -18,12 +18,33 @@ class _ProjectListScreenState extends State<ProjectListScreen> {
   Map<int, int> _unread = {};
   bool _showChatEntry = false;
   String _query = '';
+  int _retrying = 0; // 当前正在进行第几次重试（0 = 没有在重试）
 
   @override
   void initState() {
     super.initState();
     _refreshProjects();
     _refreshUnread();
+    // 监听全局网络重试事件，在 UI 上给可见反馈
+    ApiService.instance.retryEvents.listen((event) {
+      if (event.path == '/api/projects' || event.path == '/api/chat/unread') {
+        if (!mounted) return;
+        setState(() => _retrying = event.attempt);
+        // 短暂显示 SnackBar 提示
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              '网络不稳定(${event.reason})，第 ${event.attempt}/3 次重试…',
+              style: const TextStyle(color: Color(0xFF00d4ff), fontSize: 13),
+            ),
+            backgroundColor: const Color(0xFF1a2332),
+            duration: Duration(milliseconds: event.waitMs + 200),
+            behavior: SnackBarBehavior.floating,
+            margin: const EdgeInsets.all(16),
+          ),
+        );
+      }
+    });
   }
 
   void _refreshProjects() {
@@ -165,7 +186,23 @@ class _ProjectListScreenState extends State<ProjectListScreen> {
             future: _projectsFuture,
             builder: (context, snapshot) {
               if (snapshot.connectionState == ConnectionState.waiting) {
-                return const SliverFillRemaining(child: Center(child: CircularProgressIndicator()));
+                return SliverFillRemaining(
+                  child: Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        const CircularProgressIndicator(color: Color(0xFF00d4ff)),
+                        const SizedBox(height: 16),
+                        Text(
+                          _retrying > 0
+                              ? '网络不稳定，正在第 $_retrying/3 次重试…'
+                              : '正在加载项目列表…',
+                          style: const TextStyle(color: Color(0xFF94a3b8), fontSize: 14),
+                        ),
+                      ],
+                    ),
+                  ),
+                );
               } else if (snapshot.hasError) {
                 return SliverFillRemaining(
                   child: Center(

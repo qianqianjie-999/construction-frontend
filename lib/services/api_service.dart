@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'package:dio/dio.dart';
 import 'package:dio/io.dart';
@@ -5,6 +6,15 @@ import 'package:flutter/foundation.dart';
 import 'package:image_picker/image_picker.dart';
 import '../models/project.dart';
 import '../models/construction_log.dart';
+
+/// 网络重试事件（用于在 UI 上给用户可见反馈）
+class RetryEvent {
+  final String path;
+  final int attempt; // 第几次重试（从 1 开始）
+  final String reason; // "502" / "connectionError" 等
+  final int waitMs; // 还会等多少毫秒
+  RetryEvent(this.path, this.attempt, this.reason, this.waitMs);
+}
 
 class ApiService {
   // 默认 API 基础 URL
@@ -21,6 +31,12 @@ class ApiService {
   // 运行时地址（登录页可修改）
   String _baseUrl = _defaultBaseUrl;
 
+  // 重试事件广播（UI 层监听显示提示）
+  final StreamController<RetryEvent> _retryController = StreamController.broadcast();
+
+  /// 网络重试事件流（broadcast，多个页面可同时监听）
+  Stream<RetryEvent> get retryEvents => _retryController.stream;
+
   // 单例模式
   static final ApiService _instance = ApiService._internal();
 
@@ -34,20 +50,22 @@ class ApiService {
     ioAdapter.createHttpClient = () {
       final client = HttpClient();
       client.badCertificateCallback = (cert, host, port) => true;
-      client.connectionTimeout = const Duration(seconds: 30);
+      // 连接超时要短：快速失败让重试接管（frp 隧道/服务器宕机时，
+      // 等 8s 还连不上就认为不可达，不要傻等 30s）
+      client.connectionTimeout = const Duration(seconds: 8);
       return client;
     };
     _dio.httpClientAdapter = ioAdapter;
 
     _dio.options.baseUrl = _baseUrl;
-    _dio.options.connectTimeout = const Duration(seconds: 30);
-    _dio.options.receiveTimeout = const Duration(seconds: 30);
+    _dio.options.connectTimeout = const Duration(seconds: 8);
+    _dio.options.receiveTimeout = const Duration(seconds: 15);
 
     // 添加日志拦截器
     _dio.interceptors.add(LogInterceptor(
-      request: true,
-      requestBody: true,
-      responseBody: true,
+      request: kDebugMode,
+      requestBody: false,
+      responseBody: false,
       error: true,
       logPrint: kDebugMode ? print : (obj) {},
     ));
@@ -63,8 +81,10 @@ class ApiService {
     ));
 
     // 网络抖动自动重试（仅 GET 幂等请求）
-    // 场景：宽带凌晨重拨/frp 隧道瞬断约 1 分钟，nginx 返回 502 或连接被重置
-    // 重试节奏：3s、8s、15s、20s（累计约 46 秒，覆盖隧道恢复窗口）
+    // 场景：frp 隧道瞬断 / Nginx 返回 502 / 宽带瞬时抖动
+    // 策略：前两次快速重试（500ms、2s），第三次等 5s，最多 3 次
+    //       累计等待仅 7.5 秒，失败就立刻显示错误页让用户手动点重试，
+    //       不傻等 46 秒让用户盯着转圈
     _dio.interceptors.add(InterceptorsWrapper(
       onError: (error, handler) async {
         final options = error.requestOptions;
@@ -82,24 +102,30 @@ class ApiService {
             (error.type != DioExceptionType.badResponse || retryableStatus);
 
         const delays = [
-          Duration(seconds: 3),
-          Duration(seconds: 8),
-          Duration(seconds: 15),
-          Duration(seconds: 20),
+          Duration(milliseconds: 500),
+          Duration(seconds: 2),
+          Duration(seconds: 5),
         ];
         final attempt = (options.extra['retry_attempt'] as int?) ?? 0;
 
         if (canRetry && attempt < delays.length) {
-          debugPrint('网络请求失败(${status ?? error.type.name})，'
-              '${delays[attempt].inSeconds}s 后第 ${attempt + 1} 次重试: ${options.path}');
+          final delayMs = delays[attempt].inMilliseconds;
+          final reason = status != null ? status.toString() : error.type.name;
+          debugPrint('🔄 网络请求失败($reason)，'
+              '${delays[attempt].inMilliseconds}ms 后第 ${attempt + 1} 次重试: ${options.path}');
+          _retryController.add(RetryEvent(options.path, attempt + 1, reason, delayMs));
           await Future.delayed(delays[attempt]);
           options.extra['retry_attempt'] = attempt + 1;
           try {
             final response = await _dio.fetch(options);
+            debugPrint('✅ 重试成功: ${options.path}');
             return handler.resolve(response);
           } catch (e) {
             return handler.next(e is DioException ? e : error);
           }
+        }
+        if (canRetry && attempt >= delays.length) {
+          debugPrint('❌ 已达最大重试次数，放弃: ${options.path}');
         }
         return handler.next(error);
       },
