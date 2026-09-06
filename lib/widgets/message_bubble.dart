@@ -406,9 +406,12 @@ class MessageBubble extends StatelessWidget {
       case 'image':
         final url = message.content ?? '';
         if (url.isEmpty) return const SizedBox.shrink();
+        final isAbsolute = url.startsWith('http');
         final fullUrl = Uri.parse(
-          url.startsWith('http') ? url : ChatService().imageUrl(url),
+          isAbsolute ? url : ChatService().imageUrl(url),
         ).toString();
+        // 气泡只加载 400px 缩略图（省 ~70% 流量），点开全屏/保存/转发才用原图
+        final thumbUrl = isAbsolute ? fullUrl : ChatService().thumbUrl(url);
         return GestureDetector(
           onTap: () => onImageTap?.call(fullUrl),
           onLongPress: () => _showImageMenu(context, fullUrl),
@@ -417,11 +420,10 @@ class MessageBubble extends StatelessWidget {
             child: ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 220, maxHeight: 320),
               child: CachedNetworkImage(
-                imageUrl: fullUrl,
+                imageUrl: thumbUrl,
                 fit: BoxFit.contain,
-                // 气泡显示宽约 220 逻辑像素，按 600 物理像素解码即可，
-                // 避免 1280px 全尺寸解码占用 ~5MB/张内存（快速滑动多图时尤明显）。
-                // 点开全屏预览走独立页面全尺寸加载，不受影响。
+                // 缩略图长边 400px，memCacheWidth 作为解码上限保险；
+                // 点开全屏预览走独立页面加载原图，清晰度不受影响。
                 memCacheWidth: 600,
                 placeholder: (_, __) => Container(
                   width: 200,

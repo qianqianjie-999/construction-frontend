@@ -152,9 +152,15 @@ class ChatService {
     return data.map((k, v) => MapEntry(int.parse(k), v as int));
   }
 
-  /// 图片完整 URL
+  /// 图片完整 URL（点开全屏/保存/转发用原图）
   String imageUrl(String filename) {
     final base = ApiService.instance.baseUrl;
     return '$base/api/chat/images/$filename';
+  }
+
+  /// 缩略图 URL（聊天气泡用，服务端不存在时按需自动生成并回退原图）
+  String thumbUrl(String filename) {
+    final base = ApiService.instance.baseUrl;
+    return '$base/api/chat/images/thumb/$filename';
   }
 }
