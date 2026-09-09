@@ -4,6 +4,7 @@ import 'dart:typed_data';
 import 'dart:ui' as ui;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/painting.dart';
+import 'package:flutter/services.dart' show rootBundle;
 import 'package:image/image.dart' as img;
 import 'package:image_picker/image_picker.dart';
 
@@ -11,6 +12,21 @@ class WatermarkService {
   static final WatermarkService _instance = WatermarkService._internal();
   factory WatermarkService() => _instance;
   WatermarkService._internal();
+
+  /// 品牌 logo（assets 中缓存，只加载一次）
+  ui.Image? _logoCache;
+  Future<ui.Image?> _loadLogo() async {
+    if (_logoCache != null) return _logoCache;
+    try {
+      final data = await rootBundle.load('assets/images/watermark_logo.png');
+      final codec = await ui.instantiateImageCodec(data.buffer.asUint8List());
+      _logoCache = (await codec.getNextFrame()).image;
+      return _logoCache;
+    } catch (e) {
+      debugPrint('logo 加载失败: $e');
+      return null;
+    }
+  }
 
   /// 压缩图片：限制最大边长 1280px（相册图上传用，不加水印）
   img.Image _compressImage(img.Image image) {
@@ -63,6 +79,7 @@ class WatermarkService {
     bool showTime = true,
     bool showProject = true,
     bool showNote = true,
+    bool showLogo = true,
   }) async {
     const maxDim = 1280;
 
@@ -93,8 +110,13 @@ class WatermarkService {
         '${now.year}-${two(now.month)}-${two(now.day)} ${two(now.hour)}:${two(now.minute)}:${two(now.second)}';
 
     // ---- 左下角水印区（从下往上：备注黄条 / 信息块 / 品牌logo） ----
-    final infoFontSize = (w * 0.042).clamp(16.0, 28.0);
-    final pad = w * 0.035;
+    // 横拍（长边为水平）时按短边（高）缩放字号，水印块更紧凑，始终贴着底部长边
+    final isLandscape = w > h;
+    final shortSide = math.min(w, h);
+    final infoFontSize =
+        (shortSide * (isLandscape ? 0.052 : 0.042)).clamp(15.0, 27.0);
+    final lineHeight = isLandscape ? 1.38 : 1.55;
+    final pad = shortSide * 0.035;
     const textShadow = [
       Shadow(color: Color(0xFF000000), blurRadius: 4, offset: Offset(1.0, 1.0)),
       Shadow(color: Color(0xFF000000), blurRadius: 4, offset: Offset(-1.0, 1.0)),
@@ -170,7 +192,7 @@ class WatermarkService {
           style: TextStyle(
             color: const Color(0xFFFFFFFF),
             fontSize: infoFontSize,
-            height: 1.55,
+            height: lineHeight,
             fontWeight: FontWeight.w500,
             shadows: textShadow,
           ),
@@ -192,53 +214,34 @@ class WatermarkService {
       cursorY = infoTop - infoFontSize * 0.55;
     }
 
-    // ③ 品牌 logo 行：青色圆标（白色"工"字）+ "工程现场管理"
-    final logoSize = infoFontSize * 2.0;
-    final logoTop = cursorY - logoSize;
-    final logoCx = pad * 0.6 + logoSize / 2;
-    final logoCy = logoTop + logoSize / 2;
-    // 青色实心圆
-    canvas.drawCircle(
-      Offset(logoCx, logoCy),
-      logoSize / 2,
-      Paint()..color = const Color(0xFF00d4ff),
-    );
-    // 白色"工"字
-    final gongTp = TextPainter(
-      text: TextSpan(
-        text: '工',
-        style: TextStyle(
-          color: const Color(0xFF0a0f1a),
-          fontSize: logoSize * 0.58,
-          fontWeight: FontWeight.bold,
-        ),
-      ),
-      textDirection: TextDirection.ltr,
-    )..layout();
-    gongTp.paint(
-      canvas,
-      Offset(logoCx - gongTp.width / 2, logoCy - gongTp.height / 2),
-    );
-    // 品牌名
-    final brandTp = TextPainter(
-      text: TextSpan(
-        text: '工程现场管理',
-        style: TextStyle(
-          color: const Color(0xFFFFFFFF),
-          fontSize: infoFontSize * 1.05,
-          fontWeight: FontWeight.bold,
-          shadows: textShadow,
-        ),
-      ),
-      textDirection: TextDirection.ltr,
-      maxLines: 1,
-      ellipsis: '…',
-    )..layout(maxWidth: w - pad * 2 - logoSize - infoFontSize);
-    brandTp.paint(
-      canvas,
-      Offset(pad * 0.6 + logoSize + infoFontSize * 0.5,
-          logoCy - brandTp.height / 2),
-    );
+    // ③ 品牌 logo（科威达真实 logo，白色圆角衬底保证任何背景清晰）
+    if (showLogo) {
+      final logo = await _loadLogo();
+      if (logo != null) {
+        final logoH = infoFontSize * (isLandscape ? 2.4 : 2.6);
+        final logoW = logoH * logo.width / logo.height;
+        final logoPad = infoFontSize * 0.35;
+        final blockW = logoW + logoPad * 2;
+        final blockH = logoH + logoPad * 2;
+        final blockLeft = pad * 0.5;
+        final blockTop = cursorY - blockH;
+        // 白色圆角衬底
+        canvas.drawRRect(
+          RRect.fromRectAndRadius(
+            Rect.fromLTWH(blockLeft, blockTop, blockW, blockH),
+            Radius.circular(infoFontSize * 0.4),
+          ),
+          Paint()..color = const Color(0xF2FFFFFF),
+        );
+        // logo 图
+        canvas.drawImageRect(
+          logo,
+          Rect.fromLTWH(0, 0, logo.width.toDouble(), logo.height.toDouble()),
+          Rect.fromLTWH(blockLeft + logoPad, blockTop + logoPad, logoW, logoH),
+          Paint()..filterQuality = FilterQuality.high,
+        );
+      }
+    }
 
     final picture = recorder.endRecording();
     final outImg = await picture.toImage(w, h);
@@ -263,7 +266,8 @@ class WatermarkService {
       bool showAddress = true,
       bool showTime = true,
       bool showProject = true,
-      bool showNote = true}) async {
+      bool showNote = true,
+      bool showLogo = true}) async {
     try {
       final bytes = await imageFile.readAsBytes();
       final out = await _makeWatermarkedBytes(
@@ -279,6 +283,7 @@ class WatermarkService {
         showTime: showTime,
         showProject: showProject,
         showNote: showNote,
+        showLogo: showLogo,
       );
       final outputFile = File('${imageFile.path}_watermarked.jpg');
       await outputFile.writeAsBytes(out);
@@ -300,7 +305,8 @@ class WatermarkService {
       bool showAddress = true,
       bool showTime = true,
       bool showProject = true,
-      bool showNote = true}) async {
+      bool showNote = true,
+      bool showLogo = true}) async {
     try {
       final bytes = await xFile.readAsBytes();
       final out = await _makeWatermarkedBytes(
@@ -316,6 +322,7 @@ class WatermarkService {
         showTime: showTime,
         showProject: showProject,
         showNote: showNote,
+        showLogo: showLogo,
       );
       final tempFile = File('${xFile.path}_watermarked.jpg');
       await tempFile.writeAsBytes(out);

@@ -1,8 +1,10 @@
+import 'dart:io';
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
+import 'package:image/image.dart' as img;
 import 'package:image_picker/image_picker.dart';
 
-/// 自定义相机页：支持广角/超广角焦段切换。
+/// 自定义相机页：支持广角/超广角焦段切换、前后摄像头（自拍）。
 /// 拍照成功后 pop 返回 XFile；取消返回 null。
 class CameraCaptureScreen extends StatefulWidget {
   const CameraCaptureScreen({super.key});
@@ -14,7 +16,7 @@ class CameraCaptureScreen extends StatefulWidget {
 class _CameraCaptureScreenState extends State<CameraCaptureScreen>
     with WidgetsBindingObserver {
   CameraController? _controller;
-  List<CameraDescription> _backCameras = [];
+  List<CameraDescription> _cameras = [];
   int _cameraIndex = 0;
   bool _initializing = true;
   bool _taking = false;
@@ -23,6 +25,10 @@ class _CameraCaptureScreenState extends State<CameraCaptureScreen>
   double _minZoom = 1.0;
   double _maxZoom = 1.0;
   double _currentZoom = 1.0;
+
+  bool get _isFront =>
+      _cameras.isNotEmpty &&
+      _cameras[_cameraIndex].lensDirection == CameraLensDirection.front;
 
   @override
   void initState() {
@@ -45,24 +51,25 @@ class _CameraCaptureScreenState extends State<CameraCaptureScreen>
     if (state == AppLifecycleState.inactive) {
       c.dispose();
     } else if (state == AppLifecycleState.resumed) {
-      _initController(_backCameras[_cameraIndex]);
+      _initController(_cameras[_cameraIndex]);
     }
   }
 
   Future<void> _setupCameras() async {
     try {
-      final cams = await availableCameras();
-      _backCameras =
-          cams.where((c) => c.lensDirection == CameraLensDirection.back).toList();
-      if (_backCameras.isEmpty) {
+      _cameras = await availableCameras();
+      if (_cameras.isEmpty) {
         setState(() {
-          _error = '未检测到后置摄像头';
+          _error = '未检测到摄像头';
           _initializing = false;
         });
         return;
       }
-      // 优先选主摄（通常是列表第一个后置）
-      await _initController(_backCameras.first);
+      // 默认选第一个后置摄像头；没有后置才用第一个
+      final backIdx = _cameras
+          .indexWhere((c) => c.lensDirection == CameraLensDirection.back);
+      _cameraIndex = backIdx >= 0 ? backIdx : 0;
+      await _initController(_cameras[_cameraIndex]);
     } catch (e) {
       setState(() {
         _error = '无法启动相机：$e';
@@ -101,11 +108,16 @@ class _CameraCaptureScreenState extends State<CameraCaptureScreen>
     }
   }
 
-  /// 切换到下一个后置摄像头（主摄/超广角/长焦，取决于设备暴露的镜头）
-  Future<void> _switchCamera() async {
-    if (_backCameras.length < 2) return;
-    _cameraIndex = (_cameraIndex + 1) % _backCameras.length;
-    await _initController(_backCameras[_cameraIndex]);
+  /// 切换前置/后置摄像头（自拍）
+  Future<void> _flipCamera() async {
+    if (_cameras.length < 2 || _initializing) return;
+    final wantFront = !_isFront;
+    final idx = _cameras.indexWhere((c) =>
+        c.lensDirection ==
+        (wantFront ? CameraLensDirection.front : CameraLensDirection.back));
+    if (idx < 0 || idx == _cameraIndex) return;
+    _cameraIndex = idx;
+    await _initController(_cameras[idx]);
   }
 
   Future<void> _setZoom(double z) async {
@@ -121,8 +133,25 @@ class _CameraCaptureScreenState extends State<CameraCaptureScreen>
     if (c == null || !c.value.isInitialized || _taking) return;
     setState(() => _taking = true);
     try {
-      final XFile file = await c.takePicture();
-      if (mounted) Navigator.pop(context, file);
+      final XFile raw = await c.takePicture();
+      XFile result = raw;
+      // 前置自拍：照片水平镜像，与预览所见一致
+      if (_isFront) {
+        try {
+          final src = img.decodeImage(await raw.readAsBytes());
+          if (src != null) {
+            final flipped = img.flipHorizontal(src);
+            final outPath =
+                '${Directory.systemTemp.path}/selfie_${DateTime.now().millisecondsSinceEpoch}.jpg';
+            await File(outPath)
+                .writeAsBytes(img.encodeJpg(flipped, quality: 90));
+            result = XFile(outPath);
+          }
+        } catch (e) {
+          debugPrint('自拍镜像处理失败，使用原图: $e');
+        }
+      }
+      if (mounted) Navigator.pop(context, result);
     } catch (e) {
       if (mounted) {
         setState(() => _taking = false);
@@ -133,7 +162,7 @@ class _CameraCaptureScreenState extends State<CameraCaptureScreen>
     }
   }
 
-  /// 焦段按钮：广角(≤0.7x) / 1x / 2x(若支持)
+  /// 焦段按钮：广角(≤0.7x) / 1x / 2x(若支持)。仅后置显示
   List<({String label, double zoom})> get _zoomOptions {
     final opts = <({String label, double zoom})>[];
     if (_minZoom < 0.9) {
@@ -151,6 +180,8 @@ class _CameraCaptureScreenState extends State<CameraCaptureScreen>
 
   @override
   Widget build(BuildContext context) {
+    final showZoom =
+        !_isFront && _controller != null && _zoomOptions.length > 1;
     return Scaffold(
       backgroundColor: Colors.black,
       body: SafeArea(
@@ -193,9 +224,7 @@ class _CameraCaptureScreenState extends State<CameraCaptureScreen>
               top: 14,
               right: 16,
               child: Text(
-                _backCameras.length > 1
-                    ? '镜头 ${_cameraIndex + 1}/${_backCameras.length}'
-                    : '',
+                _isFront ? '自拍模式' : '',
                 style: const TextStyle(color: Colors.white70, fontSize: 13),
               ),
             ),
@@ -207,8 +236,8 @@ class _CameraCaptureScreenState extends State<CameraCaptureScreen>
               bottom: 0,
               child: Column(
                 children: [
-                  // 焦段切换
-                  if (_controller != null && _zoomOptions.length > 1)
+                  // 焦段切换（仅后置摄像头）
+                  if (showZoom)
                     Container(
                       margin: const EdgeInsets.only(bottom: 18),
                       padding: const EdgeInsets.symmetric(
@@ -253,13 +282,14 @@ class _CameraCaptureScreenState extends State<CameraCaptureScreen>
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        // 多镜头切换按钮
+                        // 前后摄像头切换（自拍）
                         SizedBox(
                           width: 64,
-                          child: _backCameras.length > 1
+                          child: _cameras.length > 1
                               ? IconButton(
-                                  onPressed: _initializing ? null : _switchCamera,
-                                  icon: const Icon(Icons.cameraswitch,
+                                  onPressed:
+                                      _initializing ? null : _flipCamera,
+                                  icon: const Icon(Icons.flip_camera_ios,
                                       color: Colors.white, size: 30),
                                 )
                               : const SizedBox.shrink(),

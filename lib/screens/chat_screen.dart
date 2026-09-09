@@ -47,6 +47,7 @@ class _WatermarkConfig {
   final bool showTime;
   final bool showProject;
   final bool showNote;
+  final bool showLogo;
   const _WatermarkConfig({
     required this.note,
     required this.showLon,
@@ -55,6 +56,7 @@ class _WatermarkConfig {
     required this.showTime,
     required this.showProject,
     required this.showNote,
+    required this.showLogo,
   });
 }
 
@@ -653,6 +655,7 @@ class _ChatScreenState extends State<ChatScreen> {
         showTime: cfg.showTime,
         showProject: cfg.showProject,
         showNote: cfg.showNote,
+        showLogo: cfg.showLogo,
       );
 
       // 上传发送（水印图已压缩，不再二次压缩）
@@ -705,6 +708,7 @@ class _ChatScreenState extends State<ChatScreen> {
     var showTime = true;
     var showProject = true;
     var showNote = true;
+    var showLogo = true;
 
     return showDialog<_WatermarkConfig>(
       context: context,
@@ -797,6 +801,8 @@ class _ChatScreenState extends State<ChatScreen> {
                       chip('项目', showProject,
                           (v) => setDlg(() => showProject = v)),
                       chip('备注', showNote, (v) => setDlg(() => showNote = v)),
+                      chip('Logo', showLogo,
+                          (v) => setDlg(() => showLogo = v)),
                     ],
                   ),
                   const SizedBox(height: 14),
@@ -820,6 +826,7 @@ class _ChatScreenState extends State<ChatScreen> {
                             showTime: showTime,
                             showProject: showProject,
                             showNote: showNote,
+                            showLogo: showLogo,
                           ),
                         ),
                         icon: const Icon(Icons.send, size: 16),
