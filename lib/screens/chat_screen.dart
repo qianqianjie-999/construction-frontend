@@ -15,6 +15,7 @@ import 'package:share_plus/share_plus.dart';
 import 'package:uuid/uuid.dart';
 import '../models/project.dart';
 import '../services/api_service.dart';
+import 'camera_capture_screen.dart';
 import '../services/auth_service.dart';
 import '../services/chat_service.dart';
 import '../services/image_save_service.dart';
@@ -23,45 +24,7 @@ import '../services/watermark_service.dart';
 import '../widgets/chat_context_viewer.dart';
 import '../widgets/chat_download_dialog.dart';
 import '../widgets/message_bubble.dart';
-
-/// WGS84 → GCJ02（火星坐标）转换。高德地图使用 GCJ02，
-/// 而 GPS 返回 WGS84，直接传给高德会偏 300~600 米。
-(double, double) _wgs84ToGcj02(double lat, double lng) {
-  const a = 6378245.0;
-  const ee = 0.00669342162296594323;
-  bool outOfChina(double la, double lo) =>
-      lo < 72.004 || lo > 137.8347 || la < 0.8293 || la > 55.8271;
-
-  if (outOfChina(lat, lng)) return (lat, lng);
-
-  double transformLat(double x, double y) {
-    var ret = -100.0 + 2.0 * x + 3.0 * y + 0.2 * y * y + 0.1 * x * y +
-        0.2 * sqrt(x.abs());
-    ret += (20.0 * sin(6.0 * x * pi) + 20.0 * sin(2.0 * x * pi)) * 2.0 / 3.0;
-    ret += (20.0 * sin(y * pi) + 40.0 * sin(y / 3.0 * pi)) * 2.0 / 3.0;
-    ret += (160.0 * sin(y / 12.0 * pi) + 320.0 * sin(y * pi / 30.0)) * 2.0 / 3.0;
-    return ret;
-  }
-
-  double transformLon(double x, double y) {
-    var ret = 300.0 + x + 2.0 * y + 0.1 * x * x + 0.1 * x * y +
-        0.1 * sqrt(x.abs());
-    ret += (20.0 * sin(6.0 * x * pi) + 20.0 * sin(2.0 * x * pi)) * 2.0 / 3.0;
-    ret += (20.0 * sin(x * pi) + 40.0 * sin(x / 3.0 * pi)) * 2.0 / 3.0;
-    ret += (150.0 * sin(x / 12.0 * pi) + 300.0 * sin(x / 30.0 * pi)) * 2.0 / 3.0;
-    return ret;
-  }
-
-  final dLat = transformLat(lng - 105.0, lat - 35.0);
-  final dLon = transformLon(lng - 105.0, lat - 35.0);
-  final radLat = lat / 180.0 * pi;
-  var magic = sin(radLat);
-  magic = 1 - ee * magic * magic;
-  final sqrtMagic = sqrt(magic);
-  final mgLat = lat + (dLat * 180.0) / ((a * (1 - ee)) / (magic * sqrtMagic) * pi);
-  final mgLon = lng + (dLon * 180.0) / (a / sqrtMagic * cos(radLat) * pi);
-  return (mgLat, mgLon);
-}
+import '../utils/geo_utils.dart';
 
 /// 列表显示项：日期头 或 消息
 class _DisplayItem {
@@ -502,7 +465,7 @@ class _ChatScreenState extends State<ChatScreen> {
         timeLimit: const Duration(seconds: 10),
       );
       if (!mounted) return;
-      final (gcjLat, gcjLng) = _wgs84ToGcj02(pos.latitude, pos.longitude);
+      final (gcjLat, gcjLng) = wgs84ToGcj02(pos.latitude, pos.longitude);
       SocketService().sendLocation(
         widget.project.id,
         lat: gcjLat,
@@ -639,13 +602,11 @@ class _ChatScreenState extends State<ChatScreen> {
 
   /// 拍照 → 水印确认页（备注 + 6 行内容开关）→ 加水印 → 发送
   Future<void> _takeAndSendPhoto() async {
-    final picker = ImagePicker();
+    // 自定义相机页（支持广角/超广角焦段切换）
     final XFile? photo;
     try {
-      photo = await picker.pickImage(
-        source: ImageSource.camera,
-        imageQuality: 90,
-        preferredCameraDevice: CameraDevice.rear,
+      photo = await Navigator.of(context).push<XFile>(
+        MaterialPageRoute(builder: (_) => const CameraCaptureScreen()),
       );
     } catch (e) {
       _toast('无法打开相机：$e');
@@ -717,7 +678,8 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
-  /// 获取定位 + 逆地理地址（失败返回全 null，不阻断流程）
+  /// 获取定位 + 逆地理地址，返回值统一为 GCJ02（高德坐标，与地址/导航一致）。
+  /// 失败返回全 null，不阻断流程。
   Future<({double? lat, double? lng, String? address})>
       _fetchLocationForWatermark() async {
     try {
@@ -725,8 +687,10 @@ class _ChatScreenState extends State<ChatScreen> {
         desiredAccuracy: LocationAccuracy.medium,
         timeLimit: const Duration(seconds: 6),
       );
-      final address = await _reverseGeocode(pos.latitude, pos.longitude);
-      return (lat: pos.latitude, lng: pos.longitude, address: address);
+      // WGS84(GPS) → GCJ02(高德)：水印坐标、地址查询、点位导航三者一致
+      final (gcjLat, gcjLng) = wgs84ToGcj02(pos.latitude, pos.longitude);
+      final address = await _reverseGeocode(gcjLat, gcjLng);
+      return (lat: gcjLat, lng: gcjLng, address: address);
     } catch (_) {
       return (lat: null, lng: null, address: null);
     }
@@ -880,15 +844,14 @@ class _ChatScreenState extends State<ChatScreen> {
     );
   }
 
-  /// 高德逆地理编码（WGS84 入参，内部转 GCJ02）。
+  /// 高德逆地理编码（入参为 GCJ02 高德坐标）。
   /// Key 通过编译参数注入：--dart-define=AMAP_WEB_KEY=xxx（自用版）；
   /// 开源版未注入时返回 null，水印不显示地址行（其余水印行不受影响）。
   static const String _amapWebKey =
       String.fromEnvironment('AMAP_WEB_KEY', defaultValue: '');
-  Future<String?> _reverseGeocode(double wgsLat, double wgsLng) async {
+  Future<String?> _reverseGeocode(double gcjLat, double gcjLng) async {
     if (_amapWebKey.isEmpty) return null;
     try {
-      final (gcjLat, gcjLng) = _wgs84ToGcj02(wgsLat, wgsLng);
       final resp = await Dio().get(
         'https://restapi.amap.com/v3/geocode/regeo',
         queryParameters: {

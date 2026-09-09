@@ -92,13 +92,20 @@ class WatermarkService {
     final timeStr =
         '${now.year}-${two(now.month)}-${two(now.day)} ${two(now.hour)}:${two(now.minute)}:${two(now.second)}';
 
-    // ---- 左下角信息块（白字 + 阴影，亮背景也清晰） ----
-    final infoFontSize = (w * 0.033).clamp(13.0, 21.0);
+    // ---- 左下角水印区（从下往上：备注黄条 / 信息块 / 品牌logo） ----
+    final infoFontSize = (w * 0.042).clamp(16.0, 28.0);
+    final pad = w * 0.035;
+    const textShadow = [
+      Shadow(color: Color(0xFF000000), blurRadius: 4, offset: Offset(1.0, 1.0)),
+      Shadow(color: Color(0xFF000000), blurRadius: 4, offset: Offset(-1.0, 1.0)),
+      Shadow(color: Color(0xFF000000), blurRadius: 2, offset: Offset(0, 0)),
+    ];
+
     final lines = <InlineSpan>[];
-    void addLine(String label, String value, {Color? valueColor}) {
+    void addLine(String label, String value) {
       lines.add(TextSpan(children: [
-        TextSpan(text: label, style: const TextStyle(fontWeight: FontWeight.w600)),
-        TextSpan(text: value, style: TextStyle(color: valueColor)),
+        TextSpan(text: label, style: const TextStyle(fontWeight: FontWeight.w700)),
+        TextSpan(text: value),
       ]));
     }
 
@@ -119,54 +126,119 @@ class WatermarkService {
       addLine('项目: ', text.trim());
     }
     final noteStr = note?.trim() ?? '';
-    if (showNote && noteStr.isNotEmpty) {
-      addLine('备注: ', noteStr);
+    final hasNote = showNote && noteStr.isNotEmpty;
+
+    // 从底部往上排
+    double cursorY = h - pad;
+
+    // ① 备注黄底高亮条（仿今日水印相机）
+    if (hasNote) {
+      final noteTp = TextPainter(
+        text: TextSpan(
+          text: '备注: $noteStr',
+          style: TextStyle(
+            color: const Color(0xFFFFFFFF),
+            fontSize: infoFontSize * 0.92,
+            fontWeight: FontWeight.w700,
+            height: 1.4,
+            shadows: textShadow,
+          ),
+        ),
+        textDirection: TextDirection.ltr,
+        maxLines: 3,
+        ellipsis: '…',
+      )..layout(maxWidth: w - pad * 2 - infoFontSize);
+      final barPadY = infoFontSize * 0.32;
+      final barPadX = infoFontSize * 0.55;
+      final barH = noteTp.height + barPadY * 2;
+      final barW = noteTp.width + barPadX * 2;
+      final barTop = cursorY - barH;
+      final barRect = RRect.fromRectAndRadius(
+        Rect.fromLTWH(pad * 0.5, barTop, barW, barH),
+        Radius.circular(infoFontSize * 0.3),
+      );
+      canvas.drawRRect(
+          barRect, Paint()..color = const Color(0xE6FFC400));
+      noteTp.paint(canvas, Offset(pad * 0.5 + barPadX, barTop + barPadY));
+      cursorY = barTop - infoFontSize * 0.45;
     }
 
-    final infoStyle = TextStyle(
-      color: const Color(0xFFFFFFFF),
-      fontSize: infoFontSize,
-      height: 1.5,
-      shadows: const [
-        Shadow(color: Color(0xFF000000), blurRadius: 3, offset: Offset(0.8, 0.8)),
-        Shadow(color: Color(0xFF000000), blurRadius: 3, offset: Offset(-0.8, 0.8)),
-      ],
-    );
+    // ② 信息块（经纬度/地址/时间/项目）
+    if (lines.isNotEmpty) {
+      final infoTp = TextPainter(
+        text: TextSpan(
+          style: TextStyle(
+            color: const Color(0xFFFFFFFF),
+            fontSize: infoFontSize,
+            height: 1.55,
+            fontWeight: FontWeight.w500,
+            shadows: textShadow,
+          ),
+          children: [
+            for (var i = 0; i < lines.length; i++)
+              TextSpan(
+                  children: [
+                    lines[i],
+                    if (i < lines.length - 1) const TextSpan(text: '\n'),
+                  ]),
+          ],
+        ),
+        textDirection: TextDirection.ltr,
+        maxLines: 7,
+        ellipsis: '…',
+      )..layout(maxWidth: w - pad * 2);
+      final infoTop = cursorY - infoTp.height;
+      infoTp.paint(canvas, Offset(pad, infoTop));
+      cursorY = infoTop - infoFontSize * 0.55;
+    }
 
-    final infoTp = TextPainter(
-      text: TextSpan(style: infoStyle, children: [
-        for (var i = 0; i < lines.length; i++)
-          TextSpan(children: [lines[i], if (i < lines.length - 1) const TextSpan(text: '\n')]),
-      ]),
+    // ③ 品牌 logo 行：青色圆标（白色"工"字）+ "工程现场管理"
+    final logoSize = infoFontSize * 2.0;
+    final logoTop = cursorY - logoSize;
+    final logoCx = pad * 0.6 + logoSize / 2;
+    final logoCy = logoTop + logoSize / 2;
+    // 青色实心圆
+    canvas.drawCircle(
+      Offset(logoCx, logoCy),
+      logoSize / 2,
+      Paint()..color = const Color(0xFF00d4ff),
+    );
+    // 白色"工"字
+    final gongTp = TextPainter(
+      text: TextSpan(
+        text: '工',
+        style: TextStyle(
+          color: const Color(0xFF0a0f1a),
+          fontSize: logoSize * 0.58,
+          fontWeight: FontWeight.bold,
+        ),
+      ),
       textDirection: TextDirection.ltr,
-      maxLines: 8,
-      ellipsis: '…',
+    )..layout();
+    gongTp.paint(
+      canvas,
+      Offset(logoCx - gongTp.width / 2, logoCy - gongTp.height / 2),
     );
-    final pad = w * 0.035;
-    infoTp.layout(maxWidth: w - pad * 2);
-    infoTp.paint(canvas, Offset(pad, h - infoTp.height - pad * 0.9));
-
-    // ---- 右下角倾斜角标 ----
+    // 品牌名
     final brandTp = TextPainter(
       text: TextSpan(
         text: '工程现场管理',
         style: TextStyle(
-          color: const Color(0xFFFFFFFF).withOpacity(0.75),
-          fontSize: infoFontSize * 0.72,
-          fontWeight: FontWeight.w500,
-          shadows: const [
-            Shadow(color: Color(0xCC000000), blurRadius: 2, offset: Offset(1, 1)),
-          ],
+          color: const Color(0xFFFFFFFF),
+          fontSize: infoFontSize * 1.05,
+          fontWeight: FontWeight.bold,
+          shadows: textShadow,
         ),
       ),
       textDirection: TextDirection.ltr,
+      maxLines: 1,
+      ellipsis: '…',
+    )..layout(maxWidth: w - pad * 2 - logoSize - infoFontSize);
+    brandTp.paint(
+      canvas,
+      Offset(pad * 0.6 + logoSize + infoFontSize * 0.5,
+          logoCy - brandTp.height / 2),
     );
-    brandTp.layout();
-    canvas.save();
-    canvas.translate(w - pad * 0.5, h - pad * 0.35);
-    canvas.rotate(-0.22);
-    brandTp.paint(canvas, Offset(-brandTp.width, -brandTp.height));
-    canvas.restore();
 
     final picture = recorder.endRecording();
     final outImg = await picture.toImage(w, h);

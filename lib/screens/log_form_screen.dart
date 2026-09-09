@@ -4,6 +4,7 @@ import 'package:construction_app/models/project.dart';
 import 'package:construction_app/models/construction_log.dart';
 import 'package:construction_app/services/api_service.dart';
 import 'package:construction_app/services/watermark_service.dart';
+import 'package:construction_app/utils/geo_utils.dart';
 import 'package:construction_app/widgets/photo_picker_widget.dart';
 import 'dart:io';
 import 'package:image_picker/image_picker.dart';
@@ -163,11 +164,19 @@ class _LogFormScreenState extends State<LogFormScreen> {
       if (photo is PhotoWithMeta) {
         if (photo.isCamera) {
           // 相机拍照：加水印（项目名 + 日期 + 经纬度）
+          // 坐标 WGS84(GPS) → GCJ02(高德)，保证水印坐标可在高德地图直接定位
+          double? wmLat;
+          double? wmLng;
+          if (photo.latitude != null && photo.longitude != null) {
+            final gcj = wgs84ToGcj02(photo.latitude!, photo.longitude!);
+            wmLat = gcj.$1;
+            wmLng = gcj.$2;
+          }
           final watermarked = await watermarkService.addWatermarkToXFile(
             photo.xFile,
             _watermarkTextController.text,
-            latitude: photo.latitude,
-            longitude: photo.longitude,
+            latitude: wmLat,
+            longitude: wmLng,
           );
           result.add(watermarked);
         } else {
