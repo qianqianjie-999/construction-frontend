@@ -75,6 +75,26 @@ class _DisplayItem {
       _DisplayItem._(isDateHeader: true, label: text);
 }
 
+/// 水印照片配置：备注内容 + 6 行水印开关
+class _WatermarkConfig {
+  final String note;
+  final bool showLon;
+  final bool showLat;
+  final bool showAddr;
+  final bool showTime;
+  final bool showProject;
+  final bool showNote;
+  const _WatermarkConfig({
+    required this.note,
+    required this.showLon,
+    required this.showLat,
+    required this.showAddr,
+    required this.showTime,
+    required this.showProject,
+    required this.showNote,
+  });
+}
+
 /// 聊天主界面
 class ChatScreen extends StatefulWidget {
   final Project project;
@@ -617,7 +637,7 @@ class _ChatScreenState extends State<ChatScreen> {
     );
   }
 
-  /// 拍照 → 加水印（经纬度/地址/时间/项目名）→ 发送
+  /// 拍照 → 水印确认页（备注 + 6 行内容开关）→ 加水印 → 发送
   Future<void> _takeAndSendPhoto() async {
     final picker = ImagePicker();
     final XFile? photo;
@@ -634,39 +654,47 @@ class _ChatScreenState extends State<ChatScreen> {
     if (photo == null) return;
     if (!mounted) return;
 
+    // 拍照后立即并行预取定位+地址（用户在确认页填备注时同时进行）
+    final locFuture = _fetchLocationForWatermark();
+
+    // 弹水印配置确认页
+    final cfg = await _showWatermarkConfirmDialog(photo);
+    if (cfg == null) return; // 用户取消
+    if (!mounted) return;
+
     setState(() {
       _loading = true;
       _uploading = true;
     });
     try {
-      // 1. 获取定位（失败不阻断，水印不含坐标行）
-      double? wgsLat;
-      double? wgsLng;
+      // 仅在开启了坐标/地址行时才等待定位结果
+      double? lat;
+      double? lng;
       String? address;
-      try {
-        final pos = await Geolocator.getCurrentPosition(
-          desiredAccuracy: LocationAccuracy.medium,
-          timeLimit: const Duration(seconds: 6),
-        );
-        wgsLat = pos.latitude;
-        wgsLng = pos.longitude;
-        // 2. 逆地理编码（高德需要 GCJ02 坐标）
-        address = await _reverseGeocode(pos.latitude, pos.longitude);
-      } catch (_) {
-        // 定位失败/超时：水印只显示时间和项目名
+      if (cfg.showLon || cfg.showLat || cfg.showAddr) {
+        final loc = await locFuture;
+        lat = loc.lat;
+        lng = loc.lng;
+        address = loc.address;
       }
 
-      if (!mounted) return;
-      // 3. 加水印（仿元道经纬相机：左下角经纬度/地址/时间/项目）
+      // 按勾选配置加水印
       final watermarked = await WatermarkService().addWatermarkToXFile(
         photo,
         widget.project.name,
-        latitude: wgsLat,
-        longitude: wgsLng,
+        latitude: lat,
+        longitude: lng,
         address: address,
+        note: cfg.note,
+        showLongitude: cfg.showLon,
+        showLatitude: cfg.showLat,
+        showAddress: cfg.showAddr,
+        showTime: cfg.showTime,
+        showProject: cfg.showProject,
+        showNote: cfg.showNote,
       );
 
-      // 4. 上传发送（水印图已压缩，不再二次压缩）
+      // 上传发送（水印图已压缩，不再二次压缩）
       final bytes = await watermarked.readAsBytes();
       final filename = 'chat_${DateTime.now().millisecondsSinceEpoch}_cam.jpg';
       final result = await ChatService()
@@ -687,6 +715,169 @@ class _ChatScreenState extends State<ChatScreen> {
         });
       }
     }
+  }
+
+  /// 获取定位 + 逆地理地址（失败返回全 null，不阻断流程）
+  Future<({double? lat, double? lng, String? address})>
+      _fetchLocationForWatermark() async {
+    try {
+      final pos = await Geolocator.getCurrentPosition(
+        desiredAccuracy: LocationAccuracy.medium,
+        timeLimit: const Duration(seconds: 6),
+      );
+      final address = await _reverseGeocode(pos.latitude, pos.longitude);
+      return (lat: pos.latitude, lng: pos.longitude, address: address);
+    } catch (_) {
+      return (lat: null, lng: null, address: null);
+    }
+  }
+
+  /// 水印确认对话框：照片预览 + 备注输入 + 6 行内容开关
+  Future<_WatermarkConfig?> _showWatermarkConfirmDialog(XFile photo) {
+    final noteController = TextEditingController();
+    var showLon = true;
+    var showLat = true;
+    var showAddr = true;
+    var showTime = true;
+    var showProject = true;
+    var showNote = true;
+
+    return showDialog<_WatermarkConfig>(
+      context: context,
+      builder: (dlgCtx) => StatefulBuilder(
+        builder: (context, setDlg) {
+          Widget chip(String label, bool selected, ValueChanged<bool> onSel) {
+            return FilterChip(
+              label: Text(label),
+              selected: selected,
+              onSelected: onSel,
+              selectedColor: const Color(0xFF00d4ff).withOpacity(0.22),
+              checkmarkColor: const Color(0xFF00d4ff),
+              labelStyle: TextStyle(
+                color: selected
+                    ? const Color(0xFF00d4ff)
+                    : const Color(0xFF94a3b8),
+                fontSize: 13,
+              ),
+              backgroundColor: const Color(0xFF0a0f1a),
+              side: BorderSide(
+                color: selected
+                    ? const Color(0xFF00d4ff)
+                    : const Color(0xFF334155),
+              ),
+              visualDensity: VisualDensity.compact,
+            );
+          }
+
+          return Dialog(
+            backgroundColor: const Color(0xFF1a2332),
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.all(14),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // 照片预览
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(10),
+                    child: Image.file(
+                      File(photo.path),
+                      height: 170,
+                      width: double.infinity,
+                      fit: BoxFit.cover,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  // 备注输入
+                  TextField(
+                    controller: noteController,
+                    maxLines: 2,
+                    style: const TextStyle(
+                        color: Color(0xFFf1f5f9), fontSize: 14),
+                    cursorColor: const Color(0xFF00d4ff),
+                    decoration: InputDecoration(
+                      isDense: true,
+                      hintText: '备注（选填，如：临河路路口电警杆补光灯）',
+                      hintStyle: const TextStyle(color: Color(0xFF64748b)),
+                      filled: true,
+                      fillColor: const Color(0xFF0a0f1a),
+                      contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 12, vertical: 10),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(10),
+                        borderSide: BorderSide.none,
+                      ),
+                    ),
+                    onChanged: (v) {
+                      // 输入备注时自动勾选"备注"行
+                      if (v.trim().isNotEmpty && !showNote) {
+                        setDlg(() => showNote = true);
+                      }
+                    },
+                  ),
+                  const SizedBox(height: 12),
+                  const Text('水印内容（点击可开关）',
+                      style: TextStyle(
+                          color: Color(0xFF94a3b8), fontSize: 12)),
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 2,
+                    children: [
+                      chip('经度', showLon, (v) => setDlg(() => showLon = v)),
+                      chip('纬度', showLat, (v) => setDlg(() => showLat = v)),
+                      chip('地址', showAddr, (v) => setDlg(() => showAddr = v)),
+                      chip('时间', showTime, (v) => setDlg(() => showTime = v)),
+                      chip('项目', showProject,
+                          (v) => setDlg(() => showProject = v)),
+                      chip('备注', showNote, (v) => setDlg(() => showNote = v)),
+                    ],
+                  ),
+                  const SizedBox(height: 14),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    children: [
+                      TextButton(
+                        onPressed: () => Navigator.pop(dlgCtx),
+                        child: const Text('取消',
+                            style: TextStyle(color: Color(0xFF94a3b8))),
+                      ),
+                      const SizedBox(width: 8),
+                      ElevatedButton.icon(
+                        onPressed: () => Navigator.pop(
+                          dlgCtx,
+                          _WatermarkConfig(
+                            note: noteController.text.trim(),
+                            showLon: showLon,
+                            showLat: showLat,
+                            showAddr: showAddr,
+                            showTime: showTime,
+                            showProject: showProject,
+                            showNote: showNote,
+                          ),
+                        ),
+                        icon: const Icon(Icons.send, size: 16),
+                        label: const Text('发送'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF00d4ff),
+                          foregroundColor: const Color(0xFF0a0f1a),
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 18, vertical: 10),
+                          shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(10)),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
   }
 
   /// 高德逆地理编码（WGS84 入参，内部转 GCJ02）。

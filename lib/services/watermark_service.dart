@@ -47,9 +47,8 @@ class WatermarkService {
   }
 
   /// 仿"元道经纬相机"水印：
-  ///   左下角多行信息（经度/纬度/地址/时间/项目），白色字 + 黑色描边，无背景框
-  ///   画面中央半透明"现场拍照"大字
-  ///   右下角倾斜"工程现场管理"角标
+  ///   左下角多行信息（经度/纬度/地址/时间/项目/备注，均可开关），
+  ///   白色字 + 阴影，无背景框；右下角应用角标。
   /// 同时限制最长边 1280px 并输出 JPEG。
   Future<Uint8List> _makeWatermarkedBytes(
     Uint8List bytes,
@@ -57,6 +56,13 @@ class WatermarkService {
     double? latitude,
     double? longitude,
     String? address,
+    String? note,
+    bool showLongitude = true,
+    bool showLatitude = true,
+    bool showAddress = true,
+    bool showTime = true,
+    bool showProject = true,
+    bool showNote = true,
   }) async {
     const maxDim = 1280;
 
@@ -96,17 +102,25 @@ class WatermarkService {
       ]));
     }
 
-    if (latitude != null && longitude != null) {
+    if (showLongitude && longitude != null) {
       addLine('经度: ', longitude.toStringAsFixed(6));
+    }
+    if (showLatitude && latitude != null) {
       addLine('纬度: ', latitude.toStringAsFixed(6));
     }
     final addr = address?.trim() ?? '';
-    if (addr.isNotEmpty) {
+    if (showAddress && addr.isNotEmpty) {
       addLine('地址: ', addr);
     }
-    addLine('时间: ', timeStr);
-    if (text.trim().isNotEmpty) {
+    if (showTime) {
+      addLine('时间: ', timeStr);
+    }
+    if (showProject && text.trim().isNotEmpty) {
       addLine('项目: ', text.trim());
+    }
+    final noteStr = note?.trim() ?? '';
+    if (showNote && noteStr.isNotEmpty) {
+      addLine('备注: ', noteStr);
     }
 
     final infoStyle = TextStyle(
@@ -125,7 +139,7 @@ class WatermarkService {
           TextSpan(children: [lines[i], if (i < lines.length - 1) const TextSpan(text: '\n')]),
       ]),
       textDirection: TextDirection.ltr,
-      maxLines: 6,
+      maxLines: 8,
       ellipsis: '…',
     );
     final pad = w * 0.035;
@@ -168,7 +182,16 @@ class WatermarkService {
 
   /// 添加水印到图片文件，失败时返回原图
   Future<File> addWatermark(File imageFile, String customText,
-      {double? latitude, double? longitude, String? address}) async {
+      {double? latitude,
+      double? longitude,
+      String? address,
+      String? note,
+      bool showLongitude = true,
+      bool showLatitude = true,
+      bool showAddress = true,
+      bool showTime = true,
+      bool showProject = true,
+      bool showNote = true}) async {
     try {
       final bytes = await imageFile.readAsBytes();
       final out = await _makeWatermarkedBytes(
@@ -177,6 +200,13 @@ class WatermarkService {
         latitude: latitude,
         longitude: longitude,
         address: address,
+        note: note,
+        showLongitude: showLongitude,
+        showLatitude: showLatitude,
+        showAddress: showAddress,
+        showTime: showTime,
+        showProject: showProject,
+        showNote: showNote,
       );
       final outputFile = File('${imageFile.path}_watermarked.jpg');
       await outputFile.writeAsBytes(out);
@@ -189,7 +219,16 @@ class WatermarkService {
 
   /// 添加水印到 XFile（聊天/日志拍照用），失败时返回原 XFile
   Future<XFile> addWatermarkToXFile(XFile xFile, String customText,
-      {double? latitude, double? longitude, String? address}) async {
+      {double? latitude,
+      double? longitude,
+      String? address,
+      String? note,
+      bool showLongitude = true,
+      bool showLatitude = true,
+      bool showAddress = true,
+      bool showTime = true,
+      bool showProject = true,
+      bool showNote = true}) async {
     try {
       final bytes = await xFile.readAsBytes();
       final out = await _makeWatermarkedBytes(
@@ -198,6 +237,13 @@ class WatermarkService {
         latitude: latitude,
         longitude: longitude,
         address: address,
+        note: note,
+        showLongitude: showLongitude,
+        showLatitude: showLatitude,
+        showAddress: showAddress,
+        showTime: showTime,
+        showProject: showProject,
+        showNote: showNote,
       );
       final tempFile = File('${xFile.path}_watermarked.jpg');
       await tempFile.writeAsBytes(out);
