@@ -581,6 +581,144 @@ class _ChatScreenState extends State<ChatScreen> {
     );
   }
 
+  /// 图片按钮：弹出选择（拍照自动加水印 / 相册多选不加水印）
+  Future<void> _showImageSourceSheet() async {
+    if (_loading || _uploading) return;
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: const Color(0xFF1a2332),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (_) => SafeArea(
+        child: Wrap(
+          children: [
+            ListTile(
+              leading: const Icon(Icons.camera_alt, color: Color(0xFF00d4ff)),
+              title: const Text('拍照（自动加水印：时间/地点/经纬度）',
+                  style: TextStyle(color: Color(0xFFf1f5f9))),
+              onTap: () {
+                Navigator.pop(context);
+                _takeAndSendPhoto();
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.photo_library, color: Color(0xFF00d4ff)),
+              title: const Text('从相册选择（不加水印，可多选）',
+                  style: TextStyle(color: Color(0xFFf1f5f9))),
+              onTap: () {
+                Navigator.pop(context);
+                _pickAndSendImage();
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// 拍照 → 加水印（经纬度/地址/时间/项目名）→ 发送
+  Future<void> _takeAndSendPhoto() async {
+    final picker = ImagePicker();
+    final XFile? photo;
+    try {
+      photo = await picker.pickImage(
+        source: ImageSource.camera,
+        imageQuality: 90,
+        preferredCameraDevice: CameraDevice.rear,
+      );
+    } catch (e) {
+      _toast('无法打开相机：$e');
+      return;
+    }
+    if (photo == null) return;
+    if (!mounted) return;
+
+    setState(() {
+      _loading = true;
+      _uploading = true;
+    });
+    try {
+      // 1. 获取定位（失败不阻断，水印不含坐标行）
+      double? wgsLat;
+      double? wgsLng;
+      String? address;
+      try {
+        final pos = await Geolocator.getCurrentPosition(
+          desiredAccuracy: LocationAccuracy.medium,
+          timeLimit: const Duration(seconds: 6),
+        );
+        wgsLat = pos.latitude;
+        wgsLng = pos.longitude;
+        // 2. 逆地理编码（高德需要 GCJ02 坐标）
+        address = await _reverseGeocode(pos.latitude, pos.longitude);
+      } catch (_) {
+        // 定位失败/超时：水印只显示时间和项目名
+      }
+
+      if (!mounted) return;
+      // 3. 加水印（仿元道经纬相机：左下角经纬度/地址/时间/项目）
+      final watermarked = await WatermarkService().addWatermarkToXFile(
+        photo,
+        widget.project.name,
+        latitude: wgsLat,
+        longitude: wgsLng,
+        address: address,
+      );
+
+      // 4. 上传发送（水印图已压缩，不再二次压缩）
+      final bytes = await watermarked.readAsBytes();
+      final filename = 'chat_${DateTime.now().millisecondsSinceEpoch}_cam.jpg';
+      final result = await ChatService()
+          .uploadImage(Uint8List.fromList(bytes), filename);
+      SocketService()
+          .sendImage(widget.project.id, result['filename'] as String);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('拍照发送失败: $e')),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _loading = false;
+          _uploading = false;
+        });
+      }
+    }
+  }
+
+  /// 高德逆地理编码（WGS84 入参，内部转 GCJ02）。
+  /// 需配置高德 Web 服务 Key（https://console.amap.com 免费申请）；
+  /// 未配置或请求失败时返回 null，水印不显示地址行。
+  static const String _amapWebKey = '';
+  Future<String?> _reverseGeocode(double wgsLat, double wgsLng) async {
+    if (_amapWebKey.isEmpty) return null;
+    try {
+      final (gcjLat, gcjLng) = _wgs84ToGcj02(wgsLat, wgsLng);
+      final resp = await Dio().get(
+        'https://restapi.amap.com/v3/geocode/regeo',
+        queryParameters: {
+          'key': _amapWebKey,
+          'location': '$gcjLng,$gcjLat',
+          'extensions': 'base',
+          'radius': '200',
+        },
+        options: Options(responseType: ResponseType.json,
+            receiveTimeout: const Duration(seconds: 5)),
+      );
+      final data = resp.data;
+      if (data is Map && data['status'] == '1') {
+        final addr = data['regeocode']?['formatted_address'];
+        if (addr is String && addr.isNotEmpty) return addr;
+      }
+    } catch (e) {
+      debugPrint('逆地理编码失败: $e');
+    }
+    return null;
+  }
+
   Future<void> _pickAndSendImage() async {
     final picker = ImagePicker();
     // 一次最多选 9 张（微信式多选）；imageQuality 原生侧压缩，
@@ -1218,8 +1356,8 @@ class _ChatScreenState extends State<ChatScreen> {
         children: [
           _inputIcon(Icons.attach_file, '发送文件（Word/Excel/PDF/DWG等）',
               disabled ? null : _pickAndSendFile),
-          _inputIcon(Icons.photo_library, '发送图片（可多选，最多9张）',
-              disabled ? null : _pickAndSendImage),
+          _inputIcon(Icons.photo_camera_outlined, '拍照加水印 / 相册发图',
+              disabled ? null : _showImageSourceSheet),
           _inputIcon(
             _locating ? Icons.hourglass_empty : Icons.location_on,
             '发送我的位置（对方可点击导航）',
