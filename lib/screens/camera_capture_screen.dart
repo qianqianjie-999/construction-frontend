@@ -4,8 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:image/image.dart' as img;
 import 'package:image_picker/image_picker.dart';
 
-/// 自定义相机页：支持广角/超广角焦段切换、前后摄像头（自拍）。
-/// 拍照成功后 pop 返回 XFile；取消返回 null。
+/// 自定义相机页：支持广角/超广角（后置多镜头切换 + 变焦焦段）、前后摄像头自拍。
+/// 拍照成功后 pop 返回 XFile（像素已按方向转正）；取消返回 null。
 class CameraCaptureScreen extends StatefulWidget {
   const CameraCaptureScreen({super.key});
 
@@ -16,8 +16,10 @@ class CameraCaptureScreen extends StatefulWidget {
 class _CameraCaptureScreenState extends State<CameraCaptureScreen>
     with WidgetsBindingObserver {
   CameraController? _controller;
-  List<CameraDescription> _cameras = [];
-  int _cameraIndex = 0;
+  final List<CameraDescription> _backCameras = [];
+  CameraDescription? _frontCamera;
+  int _backIndex = 0;
+  bool _isFront = false;
   bool _initializing = true;
   bool _taking = false;
   String? _error;
@@ -25,10 +27,6 @@ class _CameraCaptureScreenState extends State<CameraCaptureScreen>
   double _minZoom = 1.0;
   double _maxZoom = 1.0;
   double _currentZoom = 1.0;
-
-  bool get _isFront =>
-      _cameras.isNotEmpty &&
-      _cameras[_cameraIndex].lensDirection == CameraLensDirection.front;
 
   @override
   void initState() {
@@ -51,25 +49,34 @@ class _CameraCaptureScreenState extends State<CameraCaptureScreen>
     if (state == AppLifecycleState.inactive) {
       c.dispose();
     } else if (state == AppLifecycleState.resumed) {
-      _initController(_cameras[_cameraIndex]);
+      _initController(_currentCamera);
     }
   }
 
+  CameraDescription get _currentCamera =>
+      _isFront ? _frontCamera! : _backCameras[_backIndex];
+
   Future<void> _setupCameras() async {
     try {
-      _cameras = await availableCameras();
-      if (_cameras.isEmpty) {
+      final cams = await availableCameras();
+      for (final c in cams) {
+        if (c.lensDirection == CameraLensDirection.back) {
+          _backCameras.add(c);
+        } else if (c.lensDirection == CameraLensDirection.front &&
+            _frontCamera == null) {
+          _frontCamera = c;
+        }
+      }
+      if (_backCameras.isEmpty && _frontCamera == null) {
         setState(() {
           _error = '未检测到摄像头';
           _initializing = false;
         });
         return;
       }
-      // 默认选第一个后置摄像头；没有后置才用第一个
-      final backIdx = _cameras
-          .indexWhere((c) => c.lensDirection == CameraLensDirection.back);
-      _cameraIndex = backIdx >= 0 ? backIdx : 0;
-      await _initController(_cameras[_cameraIndex]);
+      // 默认后置主摄；无后置才用前置
+      _isFront = _backCameras.isEmpty;
+      await _initController(_currentCamera);
     } catch (e) {
       setState(() {
         _error = '无法启动相机：$e';
@@ -108,16 +115,24 @@ class _CameraCaptureScreenState extends State<CameraCaptureScreen>
     }
   }
 
-  /// 切换前置/后置摄像头（自拍）
+  /// 前置/后置翻转（自拍）
   Future<void> _flipCamera() async {
-    if (_cameras.length < 2 || _initializing) return;
-    final wantFront = !_isFront;
-    final idx = _cameras.indexWhere((c) =>
-        c.lensDirection ==
-        (wantFront ? CameraLensDirection.front : CameraLensDirection.back));
-    if (idx < 0 || idx == _cameraIndex) return;
-    _cameraIndex = idx;
-    await _initController(_cameras[idx]);
+    if (_initializing) return;
+    if (_isFront) {
+      if (_backCameras.isEmpty) return;
+      _isFront = false;
+    } else {
+      if (_frontCamera == null) return;
+      _isFront = true;
+    }
+    await _initController(_currentCamera);
+  }
+
+  /// 后置多镜头循环：主摄 → 广角/超广角 → 长焦（设备暴露几个就循环几个）
+  Future<void> _cycleBackLens() async {
+    if (_initializing || _backCameras.length < 2 || _isFront) return;
+    _backIndex = (_backIndex + 1) % _backCameras.length;
+    await _initController(_currentCamera);
   }
 
   Future<void> _setZoom(double z) async {
@@ -135,21 +150,22 @@ class _CameraCaptureScreenState extends State<CameraCaptureScreen>
     try {
       final XFile raw = await c.takePicture();
       XFile result = raw;
-      // 前置自拍：照片水平镜像，与预览所见一致
-      if (_isFront) {
-        try {
-          final src = img.decodeImage(await raw.readAsBytes());
-          if (src != null) {
-            final flipped = img.flipHorizontal(src);
-            final outPath =
-                '${Directory.systemTemp.path}/selfie_${DateTime.now().millisecondsSinceEpoch}.jpg';
-            await File(outPath)
-                .writeAsBytes(img.encodeJpg(flipped, quality: 90));
-            result = XFile(outPath);
+      // 像素处理：EXIF 方向转正（保证横拍出横图、水印方向正确）+ 前置镜像
+      try {
+        final src = img.decodeImage(await raw.readAsBytes());
+        if (src != null) {
+          var oriented = img.bakeOrientation(src);
+          if (_isFront) {
+            oriented = img.flipHorizontal(oriented);
           }
-        } catch (e) {
-          debugPrint('自拍镜像处理失败，使用原图: $e');
+          final outPath =
+              '${Directory.systemTemp.path}/cam_${DateTime.now().millisecondsSinceEpoch}.jpg';
+          await File(outPath)
+              .writeAsBytes(img.encodeJpg(oriented, quality: 92));
+          result = XFile(outPath);
         }
+      } catch (e) {
+        debugPrint('照片方向处理失败，使用原图: $e');
       }
       if (mounted) Navigator.pop(context, result);
     } catch (e) {
@@ -162,7 +178,7 @@ class _CameraCaptureScreenState extends State<CameraCaptureScreen>
     }
   }
 
-  /// 焦段按钮：广角(≤0.7x) / 1x / 2x(若支持)。仅后置显示
+  /// 变焦焦段按钮：广角(≤0.7x) / 1x / 2x(若支持)。仅后置显示
   List<({String label, double zoom})> get _zoomOptions {
     final opts = <({String label, double zoom})>[];
     if (_minZoom < 0.9) {
@@ -175,13 +191,23 @@ class _CameraCaptureScreenState extends State<CameraCaptureScreen>
     return opts;
   }
 
-  bool _isZoomActive(double target) =>
-      (_currentZoom - target).abs() < 0.06;
+  bool _isZoomActive(double target) => (_currentZoom - target).abs() < 0.06;
+
+  /// 后置镜头名（多镜头时提示）
+  String get _lensLabel {
+    if (_isFront) return '自拍模式';
+    if (_backCameras.length < 2) return '';
+    const names = ['主摄', '广角', '长焦'];
+    final n = _backIndex < names.length ? names[_backIndex] : '镜头${_backIndex + 1}';
+    return '$n ${_backIndex + 1}/${_backCameras.length}';
+  }
 
   @override
   Widget build(BuildContext context) {
     final showZoom =
         !_isFront && _controller != null && _zoomOptions.length > 1;
+    final canFlip = _frontCamera != null && _backCameras.isNotEmpty;
+    final canCycleLens = !_isFront && _backCameras.length > 1;
     return Scaffold(
       backgroundColor: Colors.black,
       body: SafeArea(
@@ -224,7 +250,7 @@ class _CameraCaptureScreenState extends State<CameraCaptureScreen>
               top: 14,
               right: 16,
               child: Text(
-                _isFront ? '自拍模式' : '',
+                _lensLabel,
                 style: const TextStyle(color: Colors.white70, fontSize: 13),
               ),
             ),
@@ -236,7 +262,7 @@ class _CameraCaptureScreenState extends State<CameraCaptureScreen>
               bottom: 0,
               child: Column(
                 children: [
-                  // 焦段切换（仅后置摄像头）
+                  // 变焦焦段切换（仅后置）
                   if (showZoom)
                     Container(
                       margin: const EdgeInsets.only(bottom: 18),
@@ -264,9 +290,8 @@ class _CameraCaptureScreenState extends State<CameraCaptureScreen>
                               child: Text(
                                 o.label,
                                 style: TextStyle(
-                                  color: active
-                                      ? Colors.black
-                                      : Colors.white,
+                                  color:
+                                      active ? Colors.black : Colors.white,
                                   fontSize: 13,
                                   fontWeight: FontWeight.w600,
                                 ),
@@ -282,10 +307,10 @@ class _CameraCaptureScreenState extends State<CameraCaptureScreen>
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        // 前后摄像头切换（自拍）
+                        // 左：前后翻转（自拍）
                         SizedBox(
                           width: 64,
-                          child: _cameras.length > 1
+                          child: canFlip
                               ? IconButton(
                                   onPressed:
                                       _initializing ? null : _flipCamera,
@@ -294,10 +319,11 @@ class _CameraCaptureScreenState extends State<CameraCaptureScreen>
                                 )
                               : const SizedBox.shrink(),
                         ),
-                        const SizedBox(width: 24),
+                        const SizedBox(width: 20),
                         // 快门
                         GestureDetector(
-                          onTap: _initializing || _taking ? null : _takePicture,
+                          onTap:
+                              _initializing || _taking ? null : _takePicture,
                           child: Container(
                             width: 74,
                             height: 74,
@@ -318,9 +344,19 @@ class _CameraCaptureScreenState extends State<CameraCaptureScreen>
                             ),
                           ),
                         ),
-                        const SizedBox(width: 24),
-                        // 占位保持快门居中
-                        const SizedBox(width: 64),
+                        const SizedBox(width: 20),
+                        // 右：后置多镜头循环（主摄/广角/长焦）
+                        SizedBox(
+                          width: 64,
+                          child: canCycleLens
+                              ? IconButton(
+                                  onPressed:
+                                      _initializing ? null : _cycleBackLens,
+                                  icon: const Icon(Icons.cameraswitch,
+                                      color: Color(0xFF00d4ff), size: 30),
+                                )
+                              : const SizedBox.shrink(),
+                        ),
                       ],
                     ),
                   ),

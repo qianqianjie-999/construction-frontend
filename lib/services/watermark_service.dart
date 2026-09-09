@@ -83,7 +83,20 @@ class WatermarkService {
   }) async {
     const maxDim = 1280;
 
-    final codec = await ui.instantiateImageCodec(bytes);
+    // 先按 EXIF 方向把像素转正（Flutter 画布不识别 EXIF orientation，
+    // 否则横拍照片水印会画错边）
+    var decodedBytes = bytes;
+    try {
+      final decoded = img.decodeImage(bytes);
+      if (decoded != null) {
+        final oriented = img.bakeOrientation(decoded);
+        decodedBytes = img.encodeJpg(oriented, quality: 95);
+      }
+    } catch (e) {
+      debugPrint('EXIF 方向处理失败: $e');
+    }
+
+    final codec = await ui.instantiateImageCodec(decodedBytes);
     final frame = await codec.getNextFrame();
     final src = frame.image;
     final sw = src.width;
