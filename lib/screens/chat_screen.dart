@@ -690,9 +690,10 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   /// 高德逆地理编码（WGS84 入参，内部转 GCJ02）。
-  /// 需配置高德 Web 服务 Key（https://console.amap.com 免费申请）；
-  /// 未配置或请求失败时返回 null，水印不显示地址行。
-  static const String _amapWebKey = '';
+  /// Key 通过编译参数注入：--dart-define=AMAP_WEB_KEY=xxx（自用版）；
+  /// 开源版未注入时返回 null，水印不显示地址行（其余水印行不受影响）。
+  static const String _amapWebKey =
+      String.fromEnvironment('AMAP_WEB_KEY', defaultValue: '');
   Future<String?> _reverseGeocode(double wgsLat, double wgsLng) async {
     if (_amapWebKey.isEmpty) return null;
     try {
