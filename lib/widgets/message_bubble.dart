@@ -554,7 +554,7 @@ class MessageBubble extends StatelessWidget {
     return GestureDetector(
       onTap: () => _showNavigationMenu(context, lat, lng, title, address),
       child: SizedBox(
-        width: 200,
+        width: 240,
         child: Row(
           children: [
             // 小地图缩略块：网格 + 定位图标
@@ -581,12 +581,13 @@ class MessageBubble extends StatelessWidget {
                 children: [
                   Text(
                     title,
-                    maxLines: 1,
+                    maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
                       color: textColor,
                       fontSize: 14,
                       fontWeight: FontWeight.w600,
+                      height: 1.25,
                     ),
                   ),
                   const SizedBox(height: 3),
