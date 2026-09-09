@@ -110,6 +110,10 @@ class _ChatScreenState extends State<ChatScreen> {
   bool _searching = false;
   String _searchKeyword = '';
 
+  /// 实际渲染的消息：撤回的消息直接不显示（不出现在列表、日期头计数、搜索结果中）
+  List<ChatMessage> get _visibleMessages =>
+      _messages.where((m) => !m.recalled).toList();
+
   // 撤回 ack 等待
   final Map<String, Completer<(bool, String)>> _pendingRecallAck = {};
   late final RecallAckHandler _recallAckHandler;
@@ -823,9 +827,10 @@ class _ChatScreenState extends State<ChatScreen> {
 
   /// 正常聊天视图（加载更多 + 消息列表 + 日期分组头）
   Widget _chatListView() {
-    // 预计算日期头：遍历 _messages，遇到日期变化时在该 index 前插一个日期头。
+    // 预计算日期头：遍历可见消息，遇到日期变化时在该 index 前插一个日期头。
     // 用额外的 builder 列表实现：日期头 index 作为负的逻辑位置，直接判断。
-    final itemCount = _messages.length + (_messages.isEmpty ? 0 : _countDateHeaders());
+    final visible = _visibleMessages;
+    final itemCount = visible.length + (visible.isEmpty ? 0 : _countDateHeaders());
 
     return Column(
       children: [
@@ -844,7 +849,7 @@ class _ChatScreenState extends State<ChatScreen> {
               if (mapped.isDateHeader) {
                 return _dateHeader(mapped.label ?? '');
               }
-              final m = _messages[mapped.messageIndex!];
+              final m = _visibleMessages[mapped.messageIndex!];
               return MessageBubble(
                 key: ValueKey('bubble_${m.id}'),
                 message: m,
@@ -885,10 +890,11 @@ class _ChatScreenState extends State<ChatScreen> {
 
   /// 日期头数量
   int _countDateHeaders() {
+    final messages = _visibleMessages;
     int count = 0;
     DateTime? prev;
-    for (int i = 0; i < _messages.length; i++) {
-      final cur = _parseDay(_messages[i].createdAt);
+    for (int i = 0; i < messages.length; i++) {
+      final cur = _parseDay(messages[i].createdAt);
       if (cur == null) continue;
       if (prev == null || !_isSameDay(cur, prev)) count++;
       prev = cur;
@@ -898,17 +904,18 @@ class _ChatScreenState extends State<ChatScreen> {
 
   /// displayIndex -> (日期头 or messageIndex)
   _DisplayItem _mapDisplayIndex(int displayIndex) {
+    final messages = _visibleMessages;
     int remaining = displayIndex;
     DateTime? prev;
-    for (int i = 0; i < _messages.length; i++) {
-      final cur = _parseDay(_messages[i].createdAt);
+    for (int i = 0; i < messages.length; i++) {
+      final cur = _parseDay(messages[i].createdAt);
       if (cur == null) {
         if (remaining == 0) return _DisplayItem.message(i);
         remaining--;
         continue;
       }
       if (prev == null || !_isSameDay(cur, prev)) {
-        if (remaining == 0) return _DisplayItem.header(_formatDayLabel(_messages[i].createdAt));
+        if (remaining == 0) return _DisplayItem.header(_formatDayLabel(messages[i].createdAt));
         remaining--;
       }
       if (remaining == 0) return _DisplayItem.message(i);
@@ -1003,7 +1010,8 @@ class _ChatScreenState extends State<ChatScreen> {
       // 丢弃过期结果（关键词已变化）
       if (_searchController.text.trim() != keyword) return;
       setState(() {
-        _searchResults = results;
+        // 撤回的消息不出现在搜索结果中
+        _searchResults = results.where((m) => !m.recalled).toList();
         _searching = false;
       });
     } catch (e) {

@@ -62,29 +62,9 @@ class MessageBubble extends StatelessWidget {
     final textColor =
         isMine ? const Color(0xFF0a0f1a) : const Color(0xFFf1f5f9);
 
-    // 已撤回消息：显示灰色提示
+    // 已撤回消息：不渲染（列表层已过滤，这里仅作兜底，零占位）
     if (message.recalled) {
-      return Container(
-        margin: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
-        child: Row(
-          mainAxisAlignment:
-              isMine ? MainAxisAlignment.end : MainAxisAlignment.start,
-          children: [
-            if (!isMine) _avatar(),
-            Container(
-              constraints: const BoxConstraints(maxWidth: 280),
-              padding: const EdgeInsets.all(10),
-              child: Text(
-                '${isMine ? "你" : message.nickname}撤回了一条消息',
-                style: const TextStyle(
-                    color: Color(0xFF64748b),
-                    fontSize: 13,
-                    fontStyle: FontStyle.italic),
-              ),
-            ),
-          ],
-        ),
-      );
+      return const SizedBox.shrink();
     }
 
     final row = Container(
