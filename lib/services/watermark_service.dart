@@ -130,11 +130,6 @@ class WatermarkService {
         (shortSide * (isLandscape ? 0.052 : 0.042)).clamp(15.0, 27.0);
     final lineHeight = isLandscape ? 1.38 : 1.55;
     final pad = shortSide * 0.035;
-    const textShadow = [
-      Shadow(color: Color(0xFF000000), blurRadius: 4, offset: Offset(1.0, 1.0)),
-      Shadow(color: Color(0xFF000000), blurRadius: 4, offset: Offset(-1.0, 1.0)),
-      Shadow(color: Color(0xFF000000), blurRadius: 2, offset: Offset(0, 0)),
-    ];
 
     final lines = <InlineSpan>[];
     void addLine(String label, String value) {
@@ -176,7 +171,6 @@ class WatermarkService {
             fontSize: infoFontSize * 0.92,
             fontWeight: FontWeight.w700,
             height: 1.4,
-            shadows: textShadow,
           ),
         ),
         textDirection: TextDirection.ltr,
@@ -207,7 +201,6 @@ class WatermarkService {
             fontSize: infoFontSize,
             height: lineHeight,
             fontWeight: FontWeight.w500,
-            shadows: textShadow,
           ),
           children: [
             for (var i = 0; i < lines.length; i++)
@@ -227,30 +220,18 @@ class WatermarkService {
       cursorY = infoTop - infoFontSize * 0.55;
     }
 
-    // ③ 品牌 logo（科威达真实 logo，白色圆角衬底保证任何背景清晰）
+    // ③ 品牌 logo（科威达透明底 logo，直接叠加在照片上）
     if (showLogo) {
       final logo = await _loadLogo();
       if (logo != null) {
         final logoH = infoFontSize * (isLandscape ? 2.4 : 2.6);
         final logoW = logoH * logo.width / logo.height;
-        final logoPad = infoFontSize * 0.35;
-        final blockW = logoW + logoPad * 2;
-        final blockH = logoH + logoPad * 2;
-        final blockLeft = pad * 0.5;
-        final blockTop = cursorY - blockH;
-        // 白色圆角衬底
-        canvas.drawRRect(
-          RRect.fromRectAndRadius(
-            Rect.fromLTWH(blockLeft, blockTop, blockW, blockH),
-            Radius.circular(infoFontSize * 0.4),
-          ),
-          Paint()..color = const Color(0xF2FFFFFF),
-        );
-        // logo 图
+        final logoLeft = pad * 0.5;
+        final logoTop = cursorY - logoH;
         canvas.drawImageRect(
           logo,
           Rect.fromLTWH(0, 0, logo.width.toDouble(), logo.height.toDouble()),
-          Rect.fromLTWH(blockLeft + logoPad, blockTop + logoPad, logoW, logoH),
+          Rect.fromLTWH(logoLeft, logoTop, logoW, logoH),
           Paint()..filterQuality = FilterQuality.high,
         );
       }
