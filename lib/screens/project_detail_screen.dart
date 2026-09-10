@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:construction_app/models/project.dart';
 import 'package:construction_app/models/construction_log.dart';
 import 'package:construction_app/services/api_service.dart';
@@ -551,7 +552,15 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
   }
 
   void _showFullImage(String url) {
-    Navigator.of(context).push(
+    // 大图预览允许横屏：横持手机横图占满全屏
+    SystemChrome.setPreferredOrientations([
+      DeviceOrientation.portraitUp,
+      DeviceOrientation.portraitDown,
+      DeviceOrientation.landscapeLeft,
+      DeviceOrientation.landscapeRight,
+    ]);
+    Navigator.of(context)
+        .push(
       MaterialPageRoute(
         builder: (_) => Scaffold(
           backgroundColor: Colors.black,
@@ -571,6 +580,8 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
             child: GestureDetector(
               onLongPress: () => _saveImage(url),
               child: InteractiveViewer(
+                minScale: 1.0,
+                maxScale: 5.0,
                 child: Image.network(url, loadingBuilder: (_, child, progress) {
                   if (progress == null) return child;
                   return CircularProgressIndicator(
@@ -583,7 +594,11 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
           ),
         ),
       ),
-    );
+    )
+        .then((_) {
+      // 退出恢复竖屏
+      SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
+    });
   }
 
   /// 保存图片到相册

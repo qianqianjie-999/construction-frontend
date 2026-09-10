@@ -4,6 +4,7 @@ import 'dart:io';
 import 'dart:math';
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:dio/dio.dart';
 import 'package:file_picker/file_picker.dart';
@@ -1602,7 +1603,16 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   void _showFullImage(String url) {
-    Navigator.of(context).push(
+    // 大图预览：允许四方向旋转——横持手机时页面转横屏，
+    // 横图可占满全屏高度（竖屏看横图上下黑边太大）
+    SystemChrome.setPreferredOrientations([
+      DeviceOrientation.portraitUp,
+      DeviceOrientation.portraitDown,
+      DeviceOrientation.landscapeLeft,
+      DeviceOrientation.landscapeRight,
+    ]);
+    Navigator.of(context)
+        .push(
       MaterialPageRoute(
         builder: (_) => Scaffold(
           backgroundColor: Colors.black,
@@ -1621,6 +1631,8 @@ class _ChatScreenState extends State<ChatScreen> {
             child: GestureDetector(
               onLongPress: () => _saveImage(url),
               child: InteractiveViewer(
+                minScale: 1.0,
+                maxScale: 5.0,
                 child: CachedNetworkImage(
                   imageUrl: url,
                   fit: BoxFit.contain,
@@ -1636,7 +1648,13 @@ class _ChatScreenState extends State<ChatScreen> {
           ),
         ),
       ),
-    );
+    )
+        .then((_) {
+      // 退出大图页：恢复竖屏，主界面保持竖屏使用习惯
+      SystemChrome.setPreferredOrientations([
+        DeviceOrientation.portraitUp,
+      ]);
+    });
   }
 
   /// 保存图片到相册

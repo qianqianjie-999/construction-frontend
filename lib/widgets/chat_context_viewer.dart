@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../services/chat_service.dart';
 import 'message_bubble.dart';
 
@@ -61,7 +62,15 @@ class _ChatContextViewerState extends State<ChatContextViewer> {
   }
 
   void _showImage(String url) {
-    Navigator.of(context).push(
+    // 大图预览允许横屏：横持手机横图占满全屏
+    SystemChrome.setPreferredOrientations([
+      DeviceOrientation.portraitUp,
+      DeviceOrientation.portraitDown,
+      DeviceOrientation.landscapeLeft,
+      DeviceOrientation.landscapeRight,
+    ]);
+    Navigator.of(context)
+        .push(
       MaterialPageRoute(
         builder: (_) => Scaffold(
           backgroundColor: Colors.black,
@@ -77,7 +86,11 @@ class _ChatContextViewerState extends State<ChatContextViewer> {
           ),
         ),
       ),
-    );
+    )
+        .then((_) {
+      // 退出恢复竖屏
+      SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
+    });
   }
 
   void _showFileHint() {
