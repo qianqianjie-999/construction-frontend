@@ -59,6 +59,7 @@ dependencies:
   # 系统分享（转发到微信/QQ/短信等，调起系统分享面板）
   share_plus: ^9.0.0
   camera: ^0.11.0+2
+  native_device_orientation: ^2.1.0
 
 dev_dependencies:
   flutter_test:

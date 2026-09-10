@@ -24,7 +24,8 @@ if (flutterVersionName == null) {
 
 android {
     namespace "com.example.construction_app"
-    compileSdk flutter.compileSdkVersion
+    // AGP 7.3 的 aapt2 不兼容 android-36，锁定 34
+    compileSdk 34
     ndkVersion flutter.ndkVersion
 
     compileOptions {
@@ -45,7 +46,8 @@ android {
         applicationId "com.example.construction_app"
         // You can update the following values to match your application needs.
         // For more information, see: https://docs.flutter.dev/deployment/android#reviewing-the-gradle-build-configuration.
-        // camera 插件（自定义相机/广角）要求 minSdk 21（Android 5.0）
+        // camera 插件要求 minSdk 21（Android 5.0）
+        // native_device_orientation 声明 22，用 tools:overrideLibrary 兼容
         minSdkVersion 21
         targetSdkVersion flutter.targetSdkVersion
         versionCode flutterVersionCode.toInteger()

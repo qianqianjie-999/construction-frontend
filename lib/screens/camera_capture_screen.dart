@@ -1,7 +1,9 @@
 import 'dart:io';
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show DeviceOrientation;
 import 'package:image/image.dart' as img;
+import 'package:native_device_orientation/native_device_orientation.dart';
 
 /// 自定义相机页：支持广角/超广角（后置多镜头切换 + 变焦焦段）、前后摄像头自拍。
 /// 拍照成功后 pop 返回 XFile（像素已按方向转正）；取消返回 null。
@@ -147,11 +149,20 @@ class _CameraCaptureScreenState extends State<CameraCaptureScreen>
     if (c == null || !c.value.isInitialized || _taking) return;
     setState(() => _taking = true);
     XFile? raw;
+
+    // 传感器直读当前物理方向（OrientationEventListener，与系统的
+    // "自动旋转"开关无关）。插件 takePicture 默认不刷新采集旋转，
+    // 竖屏进相机→横屏拍照会得到"竖图横内容"，水印随之错位。
+    NativeDeviceOrientation sensorOri = NativeDeviceOrientation.unknown;
     try {
-      // 关键修复：插件 takePicture 默认不更新采集旋转（相机开屏时的方向），
-      // 竖屏进相机 → 横屏拍照会得到"竖图横内容"，水印随之错位。
-      // 拍摄前显式锁定为当前手机方向，插件按传感器方向正确旋转。
-      await c.lockCaptureOrientation(c.value.deviceOrientation);
+      sensorOri = await NativeDeviceOrientationCommunicator()
+          .orientation(useSensor: true);
+    } catch (_) {}
+    final DeviceOrientation lockOri = sensorOri.deviceOrientation ?? // 传感器优先
+        c.value.deviceOrientation; // 兜底：插件事件流方向
+
+    try {
+      await c.lockCaptureOrientation(lockOri);
       raw = await c.takePicture();
     } catch (e) {
       if (mounted) {
@@ -172,6 +183,16 @@ class _CameraCaptureScreenState extends State<CameraCaptureScreen>
       final src = img.decodeImage(await raw.readAsBytes());
       if (src != null) {
         var oriented = img.bakeOrientation(src);
+        // 仲裁兜底：传感器明确是横持、但照片仍是竖尺寸 → 插件旋转
+        // 未生效，按传感器方向手动转正（符号按实机横拍样张校准）
+        final isLandscapeHold = sensorOri == NativeDeviceOrientation.landscapeLeft ||
+            sensorOri == NativeDeviceOrientation.landscapeRight;
+        if (isLandscapeHold && oriented.height > oriented.width) {
+          oriented = img.copyRotate(
+            oriented,
+            angle: sensorOri == NativeDeviceOrientation.landscapeLeft ? 90 : 270,
+          );
+        }
         if (_isFront) {
           oriented = img.flipHorizontal(oriented);
         }

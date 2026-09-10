@@ -1,4 +1,5 @@
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+          xmlns:tools="http://schemas.android.com/tools">
     <uses-permission android:name="android.permission.INTERNET"/>
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
     <uses-permission android:name="android.permission.CAMERA"/>
@@ -7,6 +8,9 @@
     <uses-permission android:name="android.permission.READ_MEDIA_IMAGES"/>
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
+    <!-- native_device_orientation 声明 minSdk 22，本项目 minSdk 21。
+         用 overrideLibrary 强制合并（插件实际不需要 API 22 特性） -->
+    <uses-sdk tools:overrideLibrary="com.github.rmtmckenzie.native_device_orientation"/>
     <application
         android:label="@string/app_name"
         android:name="${applicationName}"
