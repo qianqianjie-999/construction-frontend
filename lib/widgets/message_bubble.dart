@@ -91,7 +91,9 @@ class MessageBubble extends StatelessWidget {
                   ),
                 Container(
                   constraints: const BoxConstraints(maxWidth: 280),
-                  padding: const EdgeInsets.all(10),
+                  // 图片消息边距收窄（图片几乎撑满气泡），文本等保持 10
+                  padding: EdgeInsets.all(
+                      message.contentType == 'image' ? 3 : 10),
                   decoration: BoxDecoration(
                     color: bubbleColor,
                     borderRadius: BorderRadius.only(
