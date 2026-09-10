@@ -747,14 +747,17 @@ class _ChatScreenState extends State<ChatScreen> {
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // 照片预览
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(10),
-                    child: Image.file(
-                      File(photo.path),
-                      height: 170,
-                      width: double.infinity,
-                      fit: BoxFit.cover,
+                  // 照片预览：完整显示不裁剪（固定高+cover 会把横拍图
+                  // 上下裁掉，左下角水印正好被切掉无法预览确认）
+                  ConstrainedBox(
+                    constraints: const BoxConstraints(maxHeight: 300),
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(10),
+                      child: Image.file(
+                        File(photo.path),
+                        width: double.infinity,
+                        fit: BoxFit.contain,
+                      ),
                     ),
                   ),
                   const SizedBox(height: 12),
