@@ -84,13 +84,13 @@ class WatermarkService {
     const maxDim = 1280;
 
     // 先按 EXIF 方向把像素转正（Flutter 画布不识别 EXIF orientation，
-    // 否则横拍照片水印会画错边）
+    // 否则横拍照片水印会画错边）；已转正的图直接用原字节，避免二次压缩
     var decodedBytes = bytes;
     try {
       final decoded = img.decodeImage(bytes);
-      if (decoded != null) {
-        final oriented = img.bakeOrientation(decoded);
-        decodedBytes = img.encodeJpg(oriented, quality: 95);
+      if (decoded != null && (decoded.exif.imageIfd.orientation ?? 1) > 1) {
+        decodedBytes =
+            img.encodeJpg(img.bakeOrientation(decoded), quality: 95);
       }
     } catch (e) {
       debugPrint('EXIF 方向处理失败: $e');

@@ -2,7 +2,6 @@ import 'dart:io';
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
 import 'package:image/image.dart' as img;
-import 'package:image_picker/image_picker.dart';
 
 /// 自定义相机页：支持广角/超广角（后置多镜头切换 + 变焦焦段）、前后摄像头自拍。
 /// 拍照成功后 pop 返回 XFile（像素已按方向转正）；取消返回 null。
@@ -147,27 +146,13 @@ class _CameraCaptureScreenState extends State<CameraCaptureScreen>
     final c = _controller;
     if (c == null || !c.value.isInitialized || _taking) return;
     setState(() => _taking = true);
+    XFile? raw;
     try {
-      final XFile raw = await c.takePicture();
-      XFile result = raw;
-      // 像素处理：EXIF 方向转正（保证横拍出横图、水印方向正确）+ 前置镜像
-      try {
-        final src = img.decodeImage(await raw.readAsBytes());
-        if (src != null) {
-          var oriented = img.bakeOrientation(src);
-          if (_isFront) {
-            oriented = img.flipHorizontal(oriented);
-          }
-          final outPath =
-              '${Directory.systemTemp.path}/cam_${DateTime.now().millisecondsSinceEpoch}.jpg';
-          await File(outPath)
-              .writeAsBytes(img.encodeJpg(oriented, quality: 92));
-          result = XFile(outPath);
-        }
-      } catch (e) {
-        debugPrint('照片方向处理失败，使用原图: $e');
-      }
-      if (mounted) Navigator.pop(context, result);
+      // 关键修复：插件 takePicture 默认不更新采集旋转（相机开屏时的方向），
+      // 竖屏进相机 → 横屏拍照会得到"竖图横内容"，水印随之错位。
+      // 拍摄前显式锁定为当前手机方向，插件按传感器方向正确旋转。
+      await c.lockCaptureOrientation(c.value.deviceOrientation);
+      raw = await c.takePicture();
     } catch (e) {
       if (mounted) {
         setState(() => _taking = false);
@@ -175,7 +160,30 @@ class _CameraCaptureScreenState extends State<CameraCaptureScreen>
           SnackBar(content: Text('拍照失败：$e')),
         );
       }
+      return;
+    } finally {
+      try {
+        await c.unlockCaptureOrientation();
+      } catch (_) {}
     }
+    XFile result = raw;
+    // 像素处理：EXIF 方向转正（保证横拍出横图、水印方向正确）+ 前置镜像
+    try {
+      final src = img.decodeImage(await raw.readAsBytes());
+      if (src != null) {
+        var oriented = img.bakeOrientation(src);
+        if (_isFront) {
+          oriented = img.flipHorizontal(oriented);
+        }
+        final outPath =
+            '${Directory.systemTemp.path}/cam_${DateTime.now().millisecondsSinceEpoch}.jpg';
+        await File(outPath).writeAsBytes(img.encodeJpg(oriented, quality: 92));
+        result = XFile(outPath);
+      }
+    } catch (e) {
+      debugPrint('照片方向处理失败，使用原图: $e');
+    }
+    if (mounted) Navigator.pop(context, result);
   }
 
   /// 变焦焦段按钮：广角(≤0.7x) / 1x / 2x(若支持)。仅后置显示
