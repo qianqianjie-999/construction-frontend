@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import '../services/chat_service.dart';
+import 'full_screen_image_viewer.dart';
 import 'message_bubble.dart';
 
 /// 聊天搜索：命中消息的上下文定位页
@@ -62,35 +62,11 @@ class _ChatContextViewerState extends State<ChatContextViewer> {
   }
 
   void _showImage(String url) {
-    // 大图预览允许横屏：横持手机横图占满全屏
-    SystemChrome.setPreferredOrientations([
-      DeviceOrientation.portraitUp,
-      DeviceOrientation.portraitDown,
-      DeviceOrientation.landscapeLeft,
-      DeviceOrientation.landscapeRight,
-    ]);
-    Navigator.of(context)
-        .push(
+    Navigator.of(context).push(
       MaterialPageRoute(
-        builder: (_) => Scaffold(
-          backgroundColor: Colors.black,
-          appBar: AppBar(
-            backgroundColor: Colors.black,
-            iconTheme: const IconThemeData(color: Colors.white),
-          ),
-          body: Center(
-            child: GestureDetector(
-              onTap: () => Navigator.pop(context),
-              child: InteractiveViewer(child: Image.network(url)),
-            ),
-          ),
-        ),
+        builder: (_) => FullScreenImageViewer(imageUrl: url),
       ),
-    )
-        .then((_) {
-      // 退出恢复竖屏
-      SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
-    });
+    );
   }
 
   void _showFileHint() {

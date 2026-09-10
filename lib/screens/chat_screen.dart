@@ -4,8 +4,6 @@ import 'dart:io';
 import 'dart:math';
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:dio/dio.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:geolocator/geolocator.dart';
@@ -24,6 +22,7 @@ import '../services/socket_service.dart';
 import '../services/watermark_service.dart';
 import '../widgets/chat_context_viewer.dart';
 import '../widgets/chat_download_dialog.dart';
+import '../widgets/full_screen_image_viewer.dart';
 import '../widgets/message_bubble.dart';
 import '../utils/geo_utils.dart';
 
@@ -1603,58 +1602,14 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   void _showFullImage(String url) {
-    // 大图预览：允许四方向旋转——横持手机时页面转横屏，
-    // 横图可占满全屏高度（竖屏看横图上下黑边太大）
-    SystemChrome.setPreferredOrientations([
-      DeviceOrientation.portraitUp,
-      DeviceOrientation.portraitDown,
-      DeviceOrientation.landscapeLeft,
-      DeviceOrientation.landscapeRight,
-    ]);
-    Navigator.of(context)
-        .push(
+    Navigator.of(context).push(
       MaterialPageRoute(
-        builder: (_) => Scaffold(
-          backgroundColor: Colors.black,
-          appBar: AppBar(
-            backgroundColor: Colors.black,
-            iconTheme: const IconThemeData(color: Colors.white),
-            actions: [
-              IconButton(
-                icon: const Icon(Icons.download, color: Colors.white),
-                onPressed: () => _saveImage(url),
-                tooltip: '保存到相册',
-              ),
-            ],
-          ),
-          body: Center(
-            child: GestureDetector(
-              onLongPress: () => _saveImage(url),
-              child: InteractiveViewer(
-                minScale: 1.0,
-                maxScale: 5.0,
-                child: CachedNetworkImage(
-                  imageUrl: url,
-                  fit: BoxFit.contain,
-                  placeholder: (_, __) => const Center(
-                    child: CircularProgressIndicator(color: Colors.white),
-                  ),
-                  errorWidget: (_, __, ___) => const Center(
-                    child: Icon(Icons.broken_image, color: Colors.white54, size: 48),
-                  ),
-                ),
-              ),
-            ),
-          ),
+        builder: (_) => FullScreenImageViewer(
+          imageUrl: url,
+          onSave: () => _saveImage(url),
         ),
       ),
-    )
-        .then((_) {
-      // 退出大图页：恢复竖屏，主界面保持竖屏使用习惯
-      SystemChrome.setPreferredOrientations([
-        DeviceOrientation.portraitUp,
-      ]);
-    });
+    );
   }
 
   /// 保存图片到相册
