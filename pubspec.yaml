@@ -60,6 +60,8 @@ dependencies:
   share_plus: ^9.0.0
   camera: ^0.11.0+2
   native_device_orientation: ^2.1.0
+  connectivity_plus: 6.1.0
+  uuid: ^4.6.0
 
 dev_dependencies:
   flutter_test:

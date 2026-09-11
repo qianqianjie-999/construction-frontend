@@ -1,8 +1,12 @@
 import 'package:flutter/material.dart';
+import 'dart:convert';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:construction_app/models/project.dart';
 import 'package:construction_app/models/construction_log.dart';
 import 'package:construction_app/services/api_service.dart';
+import 'package:construction_app/services/auth_service.dart';
 import 'package:construction_app/services/image_save_service.dart';
+import 'package:construction_app/services/pending_queue_service.dart';
 import 'package:construction_app/screens/log_form_screen.dart';
 import 'package:construction_app/widgets/full_screen_image_viewer.dart';
 import 'package:intl/intl.dart';
@@ -17,13 +21,292 @@ class ProjectDetailScreen extends StatefulWidget {
 
 class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
   Future<List<ConstructionLog>>? _logsFuture;
-  bool _deleting = false;
   String _query = '';
+  int _lastPendingLogCount = 0;
+
+  // 离线缓存：断网时回落到上次成功同步的日志列表
+  bool _offlineMode = false;
+  DateTime? _cacheTime;
+
+  /// 离线待发队列变化：刷新横幅；待发日志减少（刚补发成功）时刷新日志列表
+  void _onPendingQueueChanged() {
+    if (!mounted) return;
+    final n =
+        PendingQueueService().logItemsFor(widget.project.id).length;
+    setState(() {});
+    if (n < _lastPendingLogCount) {
+      _refreshLogs();
+    }
+    _lastPendingLogCount = n;
+  }
+
+  /// 刷新日志列表：网络失败时回落本地缓存
+  void _refreshLogs() {
+    setState(() {
+      _logsFuture = _loadLogsWithCache().whenComplete(() {
+        if (mounted) setState(() {});
+      });
+    });
+  }
+
+  /// 网络成功 → 更新缓存并返回；失败 → 读缓存；无缓存则抛出原错误
+  Future<List<ConstructionLog>> _loadLogsWithCache() async {
+    try {
+      final list =
+          await ApiService().getLogsByProject(widget.project.id);
+      await _saveLogCache(list);
+      _offlineMode = false;
+      return list;
+    } catch (e) {
+      final cached = await _readLogCache();
+      if (cached == null) rethrow;
+      _offlineMode = true;
+      _cacheTime = cached.time;
+      return cached.list;
+    }
+  }
+
+  Future<void> _saveLogCache(List<ConstructionLog> list) async {
+    try {
+      final uid = AuthService().currentUser?.id ?? 0;
+      final sp = await SharedPreferences.getInstance();
+      await sp.setString(
+          'cache_logs_${uid}_${widget.project.id}', jsonEncode({
+        'savedAt': DateTime.now().millisecondsSinceEpoch,
+        'list': list.map((l) => l.toJson()).toList(),
+      }));
+    } catch (_) {
+      // 缓存写失败不影响正常展示
+    }
+  }
+
+  Future<({List<ConstructionLog> list, DateTime time})?> _readLogCache() async {
+    try {
+      final uid = AuthService().currentUser?.id ?? 0;
+      final sp = await SharedPreferences.getInstance();
+      final raw = sp.getString('cache_logs_${uid}_${widget.project.id}');
+      if (raw == null) return null;
+      final m = jsonDecode(raw) as Map<String, dynamic>;
+      final list = (m['list'] as List)
+          .map((e) =>
+              ConstructionLog.fromJson(e as Map<String, dynamic>))
+          .toList();
+      final time =
+          DateTime.fromMillisecondsSinceEpoch((m['savedAt'] as num).toInt());
+      return (list: list, time: time);
+    } catch (_) {
+      return null;
+    }
+  }
 
   @override
   void initState() {
     super.initState();
-    _logsFuture = ApiService().getLogsByProject(widget.project.id);
+    _refreshLogs();
+    _lastPendingLogCount =
+        PendingQueueService().logItemsFor(widget.project.id).length;
+    PendingQueueService().addListener(_onPendingQueueChanged);
+    // 进页面时主动催一次队列（网络已恢复但没有事件触发的兜底）
+    PendingQueueService().kick();
+  }
+
+  @override
+  void dispose() {
+    PendingQueueService().removeListener(_onPendingQueueChanged);
+    super.dispose();
+  }
+
+  /// 离线模式横幅：正在展示缓存的施工日志
+  Widget _buildOfflineBanner() {
+    if (!_offlineMode) return const SizedBox.shrink();
+    final t = _cacheTime;
+    final timeStr = t != null
+        ? '（${t.month.toString().padLeft(2, '0')}-${t.day.toString().padLeft(2, '0')} '
+            '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')} 同步）'
+        : '';
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        color: const Color(0x1AF59E0B),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0x66F59E0B)),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.cloud_off, size: 18, color: Color(0xFFF59E0B)),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              '当前离线，显示缓存的施工日志$timeStr',
+              style: const TextStyle(
+                  color: Color(0xFFfbbf24),
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600),
+            ),
+          ),
+          TextButton(
+            style: TextButton.styleFrom(
+              minimumSize: const Size(0, 32),
+              padding: const EdgeInsets.symmetric(horizontal: 10),
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            ),
+            onPressed: _refreshLogs,
+            child: const Text('重试',
+                style: TextStyle(color: Color(0xFF00d4ff), fontSize: 13)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 离线待提交日志横幅
+  Widget _buildPendingLogsBanner() {
+    final items = PendingQueueService().logItemsFor(widget.project.id);
+    if (items.isEmpty) return const SizedBox.shrink();
+    final hasFailed = items.any((it) => it.status == 'failed');
+    final fmt = DateFormat('MM-dd HH:mm');
+
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        color: hasFailed
+            ? const Color(0x1AEF4444)
+            : const Color(0x1AF59E0B),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: hasFailed
+              ? const Color(0x66EF4444)
+              : const Color(0x66F59E0B),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(hasFailed ? Icons.error_outline : Icons.cloud_off,
+                  size: 18,
+                  color: hasFailed
+                      ? const Color(0xFFef4444)
+                      : const Color(0xFFF59E0B)),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  '${items.length} 条日志待提交（联网后自动发送）',
+                  style: TextStyle(
+                    color: hasFailed
+                        ? const Color(0xFFfca5a5)
+                        : const Color(0xFFfbbf24),
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+              TextButton(
+                style: TextButton.styleFrom(
+                  minimumSize: const Size(0, 32),
+                  padding: const EdgeInsets.symmetric(horizontal: 10),
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ),
+                onPressed: () => PendingQueueService().kick(),
+                child: const Text('立即发送',
+                    style:
+                        TextStyle(color: Color(0xFF00d4ff), fontSize: 13)),
+              ),
+            ],
+          ),
+          ...items.map((it) {
+            final logData =
+                (it.payload['log'] is Map) ? it.payload['log'] as Map : null;
+            final dateStr = logData?['date']?.toString();
+            final label = dateStr != null && dateStr.length >= 10
+                ? '日志日期 ${dateStr.substring(0, 10)}'
+                : '录入于 ${fmt.format(it.createdAt)}';
+            final photoCount =
+                ((it.payload['photos'] as List?)?.length ?? 0) +
+                    ((it.payload['certificates'] as List?)?.length ?? 0);
+            return Padding(
+              padding: const EdgeInsets.only(top: 6),
+              child: Row(
+                children: [
+                  Icon(
+                    it.status == 'sending'
+                        ? Icons.sync
+                        : it.status == 'failed'
+                            ? Icons.error
+                            : Icons.schedule,
+                    size: 14,
+                    color: it.status == 'failed'
+                        ? const Color(0xFFef4444)
+                        : const Color(0xFF94a3b8),
+                  ),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      it.status == 'failed'
+                          ? '$label · 照片 $photoCount 张 · 失败：${it.failReason ?? '网络错误'}'
+                          : '$label · 照片 $photoCount 张 · '
+                              '${it.status == 'sending' ? '提交中…' : '待联网提交'}',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                          color: Color(0xFFcbd5e1), fontSize: 12),
+                    ),
+                  ),
+                  if (it.status == 'failed')
+                    GestureDetector(
+                      onTap: () => PendingQueueService().retry(it.id),
+                      child: const Padding(
+                        padding: EdgeInsets.symmetric(horizontal: 8),
+                        child: Text('重试',
+                            style: TextStyle(
+                                color: Color(0xFF00d4ff), fontSize: 12)),
+                      ),
+                    ),
+                  GestureDetector(
+                    onTap: () => _confirmRemovePendingLog(it.id),
+                    child: const Padding(
+                      padding: EdgeInsets.only(left: 4),
+                      child: Icon(Icons.close,
+                          size: 16, color: Color(0xFF94a3b8)),
+                    ),
+                  ),
+                ],
+              ),
+            );
+          }),
+        ],
+      ),
+    );
+  }
+
+  /// 删除待提交日志前二次确认（删除后内容无法恢复）
+  Future<void> _confirmRemovePendingLog(String id) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF1a2332),
+        title: const Text('放弃这条待提交日志？',
+            style: TextStyle(color: Colors.white, fontSize: 16)),
+        content: const Text('删除后该日志及照片将无法恢复。',
+            style: TextStyle(color: Color(0xFF94a3b8), fontSize: 13)),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('取消',
+                style: TextStyle(color: Color(0xFF94a3b8))),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('删除',
+                style: TextStyle(color: Color(0xFFef4444))),
+          ),
+        ],
+      ),
+    );
+    if (ok == true) await PendingQueueService().remove(id);
   }
 
   @override
@@ -91,7 +374,7 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
             actions: [
               IconButton(
                 onPressed: () {
-                  Navigator.pushNamed(context, '/log_form', arguments: widget.project).then((_) => setState(() => _logsFuture = ApiService().getLogsByProject(widget.project.id)));
+                  Navigator.pushNamed(context, '/log_form', arguments: widget.project).then((_) => _refreshLogs());
                 },
                 icon: const Icon(Icons.add_circle_outline, size: 24),
                 tooltip: '录入日志',
@@ -123,6 +406,10 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
               ),
             ),
           ),
+          // 离线模式横幅：正在展示缓存的施工日志
+          SliverToBoxAdapter(child: _buildOfflineBanner()),
+          // 离线待提交日志横幅（无待发项时为零高度）
+          SliverToBoxAdapter(child: _buildPendingLogsBanner()),
           FutureBuilder<List<ConstructionLog>>(
             future: _logsFuture,
             builder: (context, snapshot) {
@@ -342,7 +629,6 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
   }
 
   Future<void> _doDelete() async {
-    setState(() => _deleting = true);
     try {
       await ApiService().deleteProject(widget.project.id);
       if (!mounted) return;
@@ -356,7 +642,6 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('删除失败：$e'), backgroundColor: const Color(0xFFef4444)),
       );
-      setState(() => _deleting = false);
     }
   }
 
@@ -429,7 +714,7 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
                           MaterialPageRoute(
                             builder: (_) => LogFormScreen(project: widget.project, editLog: log),
                           ),
-                        ).then((_) => setState(() => _logsFuture = ApiService().getLogsByProject(widget.project.id)));
+                        ).then((_) => _refreshLogs());
                       },
                       icon: const Icon(Icons.edit, size: 18),
                       label: const Text('编辑'),

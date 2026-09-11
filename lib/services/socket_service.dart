@@ -48,7 +48,7 @@ class SocketService {
     final proto = isHttps ? 'wss' : 'ws';
 
     final wsUrl = '$proto://$uri';
-    debugPrint('Socket.IO 连接: $wsUrl (token=${user.token!.substring(0, 8)}...)');
+    debugPrint('Socket.IO 连接: $wsUrl (token=${user.token.substring(0, 8)}...)');
 
     _socket = IO.io(
       wsUrl,

@@ -102,7 +102,16 @@ class ChatService {
   Future<Map<String, dynamic>> uploadImage(Uint8List bytes, String filename) async {
     final formData = FormData();
     formData.files.add(MapEntry('image', MultipartFile.fromBytes(bytes, filename: filename)));
-    final response = await _dio.post('/api/chat/upload_image', data: formData);
+    final response = await _dio.post(
+      '/api/chat/upload_image',
+      data: formData,
+      options: Options(
+        // 弱网/frp 隧道下上传可能较慢，与文件上传一致放宽到 10 分钟
+        // （服务端 Nginx 超时为 600s），避免默认 15s receiveTimeout 误杀
+        sendTimeout: const Duration(minutes: 10),
+        receiveTimeout: const Duration(minutes: 10),
+      ),
+    );
     return response.data as Map<String, dynamic>;
   }
 

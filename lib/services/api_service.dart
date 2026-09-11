@@ -278,6 +278,8 @@ class ApiService {
         },
         options: Options(
           responseType: ResponseType.bytes,
+          // PDF/Excel 生成大量日志时可能超过默认 15s
+          receiveTimeout: const Duration(minutes: 10),
         ),
       );
       return response.data;

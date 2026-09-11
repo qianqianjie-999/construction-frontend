@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:dio/dio.dart';
 import 'package:construction_app/main.dart' show AppColors;
 import '../services/auth_service.dart';
+import '../services/pending_queue_service.dart';
 import 'project_list_screen.dart';
 
 /// 登录页面
@@ -54,6 +55,9 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
         _usernameController.text.trim(),
         _passwordController.text,
       );
+      // 启动该账号的离线待发队列
+      final user = AuthService().currentUser;
+      if (user != null) PendingQueueService().startForUser(user.id);
       if (!mounted) return;
       Navigator.of(context).pushReplacement(
         MaterialPageRoute(builder: (_) => const ProjectListScreen()),

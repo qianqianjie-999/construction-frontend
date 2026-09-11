@@ -75,6 +75,8 @@ class ConstructionLog {
       'material_record': materialRecord,
       'project_manager': projectManager,
       'recorder': recorder,
+      // 照片列表（离线缓存需要；createLog 逐字段取值，不受此键影响）
+      'photos': photos.map((p) => p.toJson()).toList(),
     };
   }
 
@@ -106,6 +108,16 @@ class LogPhoto {
       photoType: json['photo_type'] as String? ?? 'site',
       url: json['url'] as String? ?? '',
     );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'filename': filename,
+      'original_filename': originalFilename,
+      'photo_type': photoType,
+      'url': url,
+    };
   }
 
   /// 拼接完整图片 URL

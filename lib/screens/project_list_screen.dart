@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
+import 'dart:convert';
 import 'dart:math' as math;
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:construction_app/models/project.dart';
 import 'package:construction_app/services/api_service.dart';
 import 'package:construction_app/services/auth_service.dart';
 import 'package:construction_app/services/chat_service.dart';
+import 'package:construction_app/services/pending_queue_service.dart';
 import 'package:construction_app/screens/chat_screen.dart';
 
 class ProjectListScreen extends StatefulWidget {
@@ -16,9 +19,12 @@ class ProjectListScreen extends StatefulWidget {
 class _ProjectListScreenState extends State<ProjectListScreen> {
   late Future<List<Project>> _projectsFuture;
   Map<int, int> _unread = {};
-  bool _showChatEntry = false;
   String _query = '';
   int _retrying = 0; // 当前正在进行第几次重试（0 = 没有在重试）
+
+  // 离线缓存：断网时回落到上次成功同步的项目列表
+  bool _offlineMode = false;
+  DateTime? _cacheTime;
 
   @override
   void initState() {
@@ -47,8 +53,60 @@ class _ProjectListScreenState extends State<ProjectListScreen> {
     });
   }
 
+  /// 刷新项目列表：网络失败时回落本地缓存
   void _refreshProjects() {
-    _projectsFuture = ApiService().getProjects();
+    setState(() {
+      _projectsFuture = _loadProjectsWithCache().whenComplete(() {
+        if (mounted) setState(() {});
+      });
+    });
+  }
+
+  /// 网络成功 → 更新缓存并返回；失败 → 读缓存（按登录用户隔离）；无缓存则抛出原错误
+  Future<List<Project>> _loadProjectsWithCache() async {
+    try {
+      final list = await ApiService().getProjects();
+      await _saveProjectCache(list);
+      _offlineMode = false;
+      return list;
+    } catch (e) {
+      final cached = await _readProjectCache();
+      if (cached == null) rethrow;
+      _offlineMode = true;
+      _cacheTime = cached.time;
+      return cached.list;
+    }
+  }
+
+  Future<void> _saveProjectCache(List<Project> list) async {
+    try {
+      final uid = AuthService().currentUser?.id ?? 0;
+      final sp = await SharedPreferences.getInstance();
+      await sp.setString('cache_projects_$uid', jsonEncode({
+        'savedAt': DateTime.now().millisecondsSinceEpoch,
+        'list': list.map((p) => p.toJson()).toList(),
+      }));
+    } catch (_) {
+      // 缓存写失败不影响正常展示
+    }
+  }
+
+  Future<({List<Project> list, DateTime time})?> _readProjectCache() async {
+    try {
+      final uid = AuthService().currentUser?.id ?? 0;
+      final sp = await SharedPreferences.getInstance();
+      final raw = sp.getString('cache_projects_$uid');
+      if (raw == null) return null;
+      final m = jsonDecode(raw) as Map<String, dynamic>;
+      final list = (m['list'] as List)
+          .map((e) => Project.fromJson(e as Map<String, dynamic>))
+          .toList();
+      final time =
+          DateTime.fromMillisecondsSinceEpoch((m['savedAt'] as num).toInt());
+      return (list: list, time: time);
+    } catch (_) {
+      return null;
+    }
   }
 
   Future<void> _refreshUnread() async {
@@ -88,6 +146,7 @@ class _ProjectListScreenState extends State<ProjectListScreen> {
                 color: const Color(0xFF1a2332),
                 onSelected: (v) async {
                   if (v == 'logout') {
+                    PendingQueueService().clearForUser();
                     await AuthService().logout();
                     if (!mounted) return;
                     Navigator.of(context).pushNamedAndRemoveUntil('/login', (route) => false);
@@ -162,6 +221,40 @@ class _ProjectListScreenState extends State<ProjectListScreen> {
               ),
             ),
           ),
+          // 离线模式横幅：正在展示缓存的项目列表
+          if (_offlineMode)
+            SliverToBoxAdapter(
+              child: Container(
+                margin: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                decoration: BoxDecoration(
+                  color: const Color(0x1AF59E0B),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: const Color(0x66F59E0B)),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.cloud_off, size: 18, color: Color(0xFFF59E0B)),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        '当前离线，显示缓存的项目列表${_cacheTime != null ? '（${_cacheTime!.month.toString().padLeft(2, '0')}-${_cacheTime!.day.toString().padLeft(2, '0')} ${_cacheTime!.hour.toString().padLeft(2, '0')}:${_cacheTime!.minute.toString().padLeft(2, '0')} 同步）' : ''}',
+                        style: const TextStyle(color: Color(0xFFfbbf24), fontSize: 13, fontWeight: FontWeight.w600),
+                      ),
+                    ),
+                    TextButton(
+                      style: TextButton.styleFrom(
+                        minimumSize: const Size(0, 32),
+                        padding: const EdgeInsets.symmetric(horizontal: 10),
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      ),
+                      onPressed: _refreshProjects,
+                      child: const Text('重试', style: TextStyle(color: Color(0xFF00d4ff), fontSize: 13)),
+                    ),
+                  ],
+                ),
+              ),
+            ),
           SliverToBoxAdapter(
             child: Padding(
               padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),

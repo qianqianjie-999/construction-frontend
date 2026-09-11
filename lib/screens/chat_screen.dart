@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
-import 'dart:math';
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:dio/dio.dart';
@@ -20,10 +19,12 @@ import '../services/chat_service.dart';
 import '../services/image_save_service.dart';
 import '../services/socket_service.dart';
 import '../services/watermark_service.dart';
+import '../services/pending_queue_service.dart';
 import '../widgets/chat_context_viewer.dart';
 import '../widgets/chat_download_dialog.dart';
 import '../widgets/full_screen_image_viewer.dart';
 import '../widgets/message_bubble.dart';
+import '../widgets/pending_message_bubble.dart';
 import '../utils/geo_utils.dart';
 
 /// 列表显示项：日期头 或 消息
@@ -104,6 +105,18 @@ class _ChatScreenState extends State<ChatScreen> {
   late final RecallAckHandler _recallAckHandler;
   static const _uuid = Uuid();
 
+  // 离线待发队列监听（入队/状态变化时刷新列表尾部的待发气泡）
+  int _lastPendingCount = 0;
+  void _onQueueChanged() {
+    if (!mounted) return;
+    final n = PendingQueueService().chatItemsFor(widget.project.id).length;
+    setState(() {});
+    if (n > _lastPendingCount) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom());
+    }
+    _lastPendingCount = n;
+  }
+
   @override
   void initState() {
     super.initState();
@@ -112,6 +125,9 @@ class _ChatScreenState extends State<ChatScreen> {
       c?.complete((ok, msg));
     };
     SocketService().onRecallAck(_recallAckHandler);
+    PendingQueueService().addListener(_onQueueChanged);
+    _lastPendingCount =
+        PendingQueueService().chatItemsFor(widget.project.id).length;
     _init();
   }
 
@@ -127,6 +143,7 @@ class _ChatScreenState extends State<ChatScreen> {
   void dispose() {
     _searchDebounce?.cancel();
     _searchController.dispose();
+    PendingQueueService().removeListener(_onQueueChanged);
     SocketService().leaveProject(widget.project.id);
     SocketService().offMessage(_onReceiveMessage);
     SocketService().offRecall(_onReceiveRecall);
@@ -433,7 +450,13 @@ class _ChatScreenState extends State<ChatScreen> {
   void _sendText() {
     final text = _inputController.text.trim();
     if (text.isEmpty) return;
-    SocketService().sendText(widget.project.id, text);
+    if (SocketService().isConnected) {
+      SocketService().sendText(widget.project.id, text);
+    } else {
+      // 断网：入离线队列，网络恢复后自动补发
+      PendingQueueService().enqueueChatText(widget.project.id, text);
+      _toast('当前未连接，消息已保存，联网后自动发送');
+    }
     _inputController.clear();
   }
 
@@ -468,12 +491,23 @@ class _ChatScreenState extends State<ChatScreen> {
       );
       if (!mounted) return;
       final (gcjLat, gcjLng) = wgs84ToGcj02(pos.latitude, pos.longitude);
-      SocketService().sendLocation(
-        widget.project.id,
-        lat: gcjLat,
-        lng: gcjLng,
-        text: note,
-      );
+      if (SocketService().isConnected) {
+        SocketService().sendLocation(
+          widget.project.id,
+          lat: gcjLat,
+          lng: gcjLng,
+          text: note,
+        );
+      } else {
+        // 断网：位置消息入离线队列（GPS 已本地采集，不依赖网络）
+        await PendingQueueService().enqueueChatLocation(
+          widget.project.id,
+          lat: gcjLat,
+          lng: gcjLng,
+          text: note,
+        );
+        _toast('当前未连接，位置已保存，联网后自动发送');
+      }
     } catch (e) {
       _toast('定位失败: $e');
     } finally {
@@ -660,11 +694,32 @@ class _ChatScreenState extends State<ChatScreen> {
 
       // 上传发送（水印图已压缩，不再二次压缩）
       final bytes = await watermarked.readAsBytes();
-      final filename = 'chat_${DateTime.now().millisecondsSinceEpoch}_cam.jpg';
-      final result = await ChatService()
-          .uploadImage(Uint8List.fromList(bytes), filename);
-      SocketService()
-          .sendImage(widget.project.id, result['filename'] as String);
+      final filename =
+          'chat_${DateTime.now().millisecondsSinceEpoch}_cam.jpg';
+
+      // 断网直接入队，不做无谓上传尝试
+      if (!SocketService().isConnected) {
+        await PendingQueueService().enqueueChatImage(
+            widget.project.id, Uint8List.fromList(bytes), filename);
+        _toast('当前未连接，照片已保存，联网后自动发送');
+        return;
+      }
+
+      try {
+        final result = await ChatService()
+            .uploadImage(Uint8List.fromList(bytes), filename);
+        SocketService()
+            .sendImage(widget.project.id, result['filename'] as String);
+      } catch (e) {
+        // 网络类失败：转离线队列，恢复后自动补发；其他错误照常提示
+        if (isNetworkError(e)) {
+          await PendingQueueService().enqueueChatImage(
+              widget.project.id, Uint8List.fromList(bytes), filename);
+          _toast('网络异常，照片已存为待发送，恢复后自动发出');
+        } else {
+          rethrow;
+        }
+      }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -889,13 +944,29 @@ class _ChatScreenState extends State<ChatScreen> {
     // 一次最多选 9 张（微信式多选）；imageQuality 原生侧压缩，
     // 服务端另有 2MB 上限 + 统一压缩双保险
     final xfiles = await picker.pickMultiImage(imageQuality: 70, limit: 9);
-    if (xfiles == null || xfiles.isEmpty) return;
+    if (xfiles.isEmpty) return;
     if (!mounted) return;
     setState(() {
       _loading = true;
       _uploading = true; // 多张上传期间同时锁住图片/文件按钮，防止重复触发
     });
     try {
+      // 断网：全部压缩后入离线队列，不做上传尝试
+      if (!SocketService().isConnected) {
+        var queued = 0;
+        for (var i = 0; i < xfiles.length; i++) {
+          final bytes = await xfiles[i].readAsBytes();
+          final compressed = await WatermarkService().compressBytes(bytes);
+          final filename =
+              'chat_${DateTime.now().millisecondsSinceEpoch}_$i.jpg';
+          await PendingQueueService().enqueueChatImage(
+              widget.project.id, Uint8List.fromList(compressed), filename);
+          queued++;
+        }
+        _toast('当前未连接，$queued 张图片已保存，联网后自动发送');
+        return;
+      }
+
       for (var i = 0; i < xfiles.length; i++) {
         final xfile = xfiles[i];
         final bytes = await xfile.readAsBytes();
@@ -905,8 +976,35 @@ class _ChatScreenState extends State<ChatScreen> {
         // 时间戳毫秒 + 序号双重保证文件名唯一
         final filename =
             'chat_${DateTime.now().millisecondsSinceEpoch}_$i.jpg';
-        final result = await ChatService().uploadImage(uint8Bytes, filename);
-        SocketService().sendImage(widget.project.id, result['filename'] as String);
+        try {
+          final result = await ChatService().uploadImage(uint8Bytes, filename);
+          SocketService()
+              .sendImage(widget.project.id, result['filename'] as String);
+        } catch (e) {
+          if (isNetworkError(e)) {
+            // 当前张 + 尚未尝试的剩余张全部转入离线队列
+            var queued = 0;
+            for (var j = i; j < xfiles.length; j++) {
+              List<int> data;
+              String name;
+              if (j == i) {
+                data = uint8Bytes;
+                name = filename;
+              } else {
+                final raw = await xfiles[j].readAsBytes();
+                data = await WatermarkService().compressBytes(raw);
+                name =
+                    'chat_${DateTime.now().millisecondsSinceEpoch}_$j.jpg';
+              }
+              await PendingQueueService().enqueueChatImage(
+                  widget.project.id, Uint8List.fromList(data), name);
+              queued++;
+            }
+            _toast('网络异常，$queued 张图片已存为待发送，恢复后自动发出');
+            return;
+          }
+          rethrow; // 非网络错误：按原逻辑提示并中断
+        }
       }
     } catch (e) {
       if (mounted) {
@@ -962,12 +1060,38 @@ class _ChatScreenState extends State<ChatScreen> {
     if (!mounted) return;
     setState(() => _uploading = true);
     try {
-      final meta = await ChatService().uploadFile(XFile(picked.path!, name: picked.name));
-      SocketService().sendFile(widget.project.id, {
-        'name': (meta['name'] ?? picked.name).toString(),
-        'path': (meta['filename'] ?? '').toString(),
-        'size': (meta['size'] is num) ? (meta['size'] as num).toInt() : len,
-      });
+      // 断网直接入队（入队时会把文件复制到应用持久目录，避免临时 URI 失效）
+      if (!SocketService().isConnected) {
+        await PendingQueueService().enqueueChatFile(
+          widget.project.id,
+          file,
+          name: picked.name,
+          size: len,
+        );
+        _toast('当前未连接，文件已保存，联网后自动发送');
+        return;
+      }
+      try {
+        final meta =
+            await ChatService().uploadFile(XFile(picked.path!, name: picked.name));
+        SocketService().sendFile(widget.project.id, {
+          'name': (meta['name'] ?? picked.name).toString(),
+          'path': (meta['filename'] ?? '').toString(),
+          'size': (meta['size'] is num) ? (meta['size'] as num).toInt() : len,
+        });
+      } catch (e) {
+        if (isNetworkError(e)) {
+          await PendingQueueService().enqueueChatFile(
+            widget.project.id,
+            file,
+            name: picked.name,
+            size: len,
+          );
+          _toast('网络异常，文件已存为待发送，恢复后自动发出');
+        } else {
+          rethrow;
+        }
+      }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -1133,7 +1257,12 @@ class _ChatScreenState extends State<ChatScreen> {
     // 预计算日期头：遍历可见消息，遇到日期变化时在该 index 前插一个日期头。
     // 用额外的 builder 列表实现：日期头 index 作为负的逻辑位置，直接判断。
     final visible = _visibleMessages;
-    final itemCount = visible.length + (visible.isEmpty ? 0 : _countDateHeaders());
+    // 离线待发消息固定追加在列表尾部（独立渲染，不参与日期分组）
+    final pendingItems =
+        PendingQueueService().chatItemsFor(widget.project.id);
+    final serverItemCount =
+        visible.length + (visible.isEmpty ? 0 : _countDateHeaders());
+    final itemCount = serverItemCount + pendingItems.length;
 
     return Column(
       children: [
@@ -1148,6 +1277,16 @@ class _ChatScreenState extends State<ChatScreen> {
             padding: const EdgeInsets.symmetric(vertical: 8),
             itemCount: itemCount,
             itemBuilder: (context, displayIndex) {
+              // 尾部离线待发区
+              if (displayIndex >= serverItemCount) {
+                final item = pendingItems[displayIndex - serverItemCount];
+                return PendingMessageBubble(
+                  key: ValueKey('pending_${item.id}'),
+                  item: item,
+                  onRetry: (id) => PendingQueueService().retry(id),
+                  onRemove: (id) => PendingQueueService().remove(id),
+                );
+              }
               final mapped = _mapDisplayIndex(displayIndex);
               if (mapped.isDateHeader) {
                 return _dateHeader(mapped.label ?? '');

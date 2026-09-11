@@ -1,12 +1,11 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/foundation.dart';
 import 'package:construction_app/models/project.dart';
 import 'package:construction_app/models/construction_log.dart';
 import 'package:construction_app/services/api_service.dart';
 import 'package:construction_app/services/watermark_service.dart';
+import 'package:construction_app/services/pending_queue_service.dart';
 import 'package:construction_app/utils/geo_utils.dart';
 import 'package:construction_app/widgets/photo_picker_widget.dart';
-import 'dart:io';
 import 'package:image_picker/image_picker.dart';
 
 class LogFormScreen extends StatefulWidget {
@@ -119,7 +118,39 @@ class _LogFormScreenState extends State<LogFormScreen> {
         // 新建模式：加水印 + 上传照片
         final watermarkedPhotos = await _addWatermarksToPhotos(_sitePhotos);
         final watermarkedCertificates = await _addWatermarksToPhotos(_certificatePhotos);
-        await ApiService().createLog(log, watermarkedPhotos, watermarkedCertificates);
+        try {
+          await ApiService()
+              .createLog(log, watermarkedPhotos, watermarkedCertificates);
+        } catch (e) {
+          // 网络不可用/超时/网关错误：整条日志（含水印图）存入离线队列，
+          // 联网后由 PendingQueueService 自动补发，避免现场白填
+          if (isNetworkError(e)) {
+            await PendingQueueService().enqueueLog(
+              log,
+              watermarkedPhotos.cast<XFile>(),
+              watermarkedCertificates.cast<XFile>(),
+            );
+            if (!mounted) return;
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: const Row(children: [
+                  Icon(Icons.cloud_off, color: Colors.white),
+                  SizedBox(width: 12),
+                  Expanded(child: Text('当前无网络，日志已保存在本机，联网后自动提交')),
+                ]),
+                backgroundColor: const Color(0xFFF59E0B),
+                duration: const Duration(seconds: 3),
+                behavior: SnackBarBehavior.floating,
+                shape:
+                    RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                margin: const EdgeInsets.all(16),
+              ),
+            );
+            Navigator.pop(context);
+            return;
+          }
+          rethrow; // 内容类错误（字段/服务端 4xx 等）：保留在表单，提示用户改
+        }
       }
 
       if (!mounted) return;

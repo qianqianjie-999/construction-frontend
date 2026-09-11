@@ -6,6 +6,7 @@ import 'package:construction_app/screens/project_list_screen.dart';
 import 'package:construction_app/screens/log_form_screen.dart';
 import 'package:construction_app/screens/project_detail_screen.dart';
 import 'package:construction_app/services/auth_service.dart';
+import 'package:construction_app/services/pending_queue_service.dart';
 import 'package:construction_app/models/project.dart';
 import 'package:intl/date_symbol_data_local.dart';
 
@@ -68,6 +69,10 @@ class _MyAppState extends State<MyApp> {
 
   Future<void> _init() async {
     final ok = await AuthService().restoreLogin();
+    if (ok && AuthService().currentUser != null) {
+      // 恢复该账号的离线待发队列（网络恢复后自动补发）
+      PendingQueueService().startForUser(AuthService().currentUser!.id);
+    }
     if (!mounted) return;
     setState(() {
       _initialized = true;
@@ -110,7 +115,7 @@ class _MyAppState extends State<MyApp> {
   }
 
   ThemeData _buildTheme() {
-    final cs = const ColorScheme.dark(
+    const cs = ColorScheme.dark(
       primary: AppColors.primary,
       secondary: AppColors.accent,
       surface: AppColors.card,
