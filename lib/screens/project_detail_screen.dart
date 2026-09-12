@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'dart:async';
 import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:construction_app/models/project.dart';
@@ -7,6 +8,7 @@ import 'package:construction_app/services/api_service.dart';
 import 'package:construction_app/services/auth_service.dart';
 import 'package:construction_app/services/image_save_service.dart';
 import 'package:construction_app/services/pending_queue_service.dart';
+import 'package:construction_app/utils/offline_helper.dart';
 import 'package:construction_app/screens/log_form_screen.dart';
 import 'package:construction_app/widgets/full_screen_image_viewer.dart';
 import 'package:intl/intl.dart';
@@ -28,6 +30,11 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
   bool _offlineMode = false;
   DateTime? _cacheTime;
 
+  int _loadGen = 0; // 加载代际：进入离线模式后作废旧的在途网络请求结果
+  bool _offlineAsked = false; // 本次加载周期内是否已经问过"进入离线模式"
+  bool _loadDone = false; // 当前加载是否已结束
+  Timer? _slowTimer; // 慢网倒计时：超时未返回就主动询问是否进离线
+
   /// 离线待发队列变化：刷新横幅；待发日志减少（刚补发成功）时刷新日志列表
   void _onPendingQueueChanged() {
     if (!mounted) return;
@@ -42,28 +49,95 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
 
   /// 刷新日志列表：网络失败时回落本地缓存
   void _refreshLogs() {
+    _offlineAsked = false;
+    _loadDone = false;
+    final gen = ++_loadGen;
+    _slowTimer?.cancel();
     setState(() {
-      _logsFuture = _loadLogsWithCache().whenComplete(() {
-        if (mounted) setState(() {});
+      _logsFuture = _runLoad(gen).whenComplete(() {
+        _loadDone = true;
+        _slowTimer?.cancel();
+        if (mounted && gen == _loadGen) setState(() {});
       });
+    });
+    // 不管 WiFi 还是 4G/5G：2.5 秒没返回且有缓存就主动询问
+    _slowTimer = Timer(const Duration(milliseconds: 2500), () {
+      if (mounted && gen == _loadGen && !_loadDone) {
+        _maybePromptOffline();
+      }
     });
   }
 
+  Future<List<ConstructionLog>> _runLoad(int gen) async {
+    // 设备完全无网：不发请求，直接读缓存秒进
+    if (!await isDeviceOnline()) {
+      final cached = await _readLogCache();
+      if (cached != null) {
+        if (gen == _loadGen) {
+          _offlineMode = true;
+          _cacheTime = cached.time;
+        }
+        return cached.list;
+      }
+      // 无缓存时继续走网络，展示正常错误页
+    }
+    return _loadLogsWithCache(gen);
+  }
+
   /// 网络成功 → 更新缓存并返回；失败 → 读缓存；无缓存则抛出原错误
-  Future<List<ConstructionLog>> _loadLogsWithCache() async {
+  Future<List<ConstructionLog>> _loadLogsWithCache(int gen) async {
     try {
       final list =
           await ApiService().getLogsByProject(widget.project.id);
       await _saveLogCache(list);
-      _offlineMode = false;
+      if (gen == _loadGen) _offlineMode = false;
       return list;
     } catch (e) {
       final cached = await _readLogCache();
       if (cached == null) rethrow;
-      _offlineMode = true;
-      _cacheTime = cached.time;
+      if (gen == _loadGen) {
+        _offlineMode = true;
+        _cacheTime = cached.time;
+      }
       return cached.list;
     }
+  }
+
+  /// 第 1 次重试时询问是否立刻进入离线模式（有缓存才问）
+  Future<void> _maybePromptOffline() async {
+    if (_offlineAsked || !mounted) return;
+    final cached = await _readLogCache();
+    if (!mounted || cached == null) return;
+    _offlineAsked = true;
+    final enter = await showOfflineModeDialog(context);
+    if (!mounted || !enter) return;
+    _enterOffline(cached);
+  }
+
+  /// 立即切到缓存视图，作废在途网络请求结果
+  void _enterOffline(({List<ConstructionLog> list, DateTime time}) cached) {
+    _loadGen++;
+    _offlineMode = true;
+    _cacheTime = cached.time;
+    setState(() => _logsFuture = Future.value(cached.list));
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _refreshLogs();
+    _lastPendingLogCount =
+        PendingQueueService().logItemsFor(widget.project.id).length;
+    PendingQueueService().addListener(_onPendingQueueChanged);
+    // 进页面时主动催一次队列（网络已恢复但没有事件触发的兜底）
+    PendingQueueService().kick();
+  }
+
+  @override
+  void dispose() {
+    _slowTimer?.cancel();
+    PendingQueueService().removeListener(_onPendingQueueChanged);
+    super.dispose();
   }
 
   Future<void> _saveLogCache(List<ConstructionLog> list) async {
@@ -97,23 +171,6 @@ class _ProjectDetailScreenState extends State<ProjectDetailScreen> {
     } catch (_) {
       return null;
     }
-  }
-
-  @override
-  void initState() {
-    super.initState();
-    _refreshLogs();
-    _lastPendingLogCount =
-        PendingQueueService().logItemsFor(widget.project.id).length;
-    PendingQueueService().addListener(_onPendingQueueChanged);
-    // 进页面时主动催一次队列（网络已恢复但没有事件触发的兜底）
-    PendingQueueService().kick();
-  }
-
-  @override
-  void dispose() {
-    PendingQueueService().removeListener(_onPendingQueueChanged);
-    super.dispose();
   }
 
   /// 离线模式横幅：正在展示缓存的施工日志

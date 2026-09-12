@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'dart:async';
 import 'dart:convert';
 import 'dart:math' as math;
 import 'package:shared_preferences/shared_preferences.dart';
@@ -7,6 +8,7 @@ import 'package:construction_app/services/api_service.dart';
 import 'package:construction_app/services/auth_service.dart';
 import 'package:construction_app/services/chat_service.dart';
 import 'package:construction_app/services/pending_queue_service.dart';
+import 'package:construction_app/utils/offline_helper.dart';
 import 'package:construction_app/screens/chat_screen.dart';
 
 class ProjectListScreen extends StatefulWidget {
@@ -26,13 +28,19 @@ class _ProjectListScreenState extends State<ProjectListScreen> {
   bool _offlineMode = false;
   DateTime? _cacheTime;
 
+  int _loadGen = 0; // 加载代际：进入离线模式后作废旧的在途网络请求结果
+  bool _offlineAsked = false; // 本次加载周期内是否已经问过"进入离线模式"
+  bool _loadDone = false; // 当前加载是否已结束（防止慢网询问窗与结果同时出现）
+  Timer? _slowTimer; // 慢网倒计时：超时未返回就主动询问是否进离线
+  StreamSubscription<RetryEvent>? _retrySub;
+
   @override
   void initState() {
     super.initState();
-    _refreshProjects();
+    _startLoad();
     _refreshUnread();
     // 监听全局网络重试事件，在 UI 上给可见反馈
-    ApiService.instance.retryEvents.listen((event) {
+    _retrySub = ApiService.instance.retryEvents.listen((event) {
       if (event.path == '/api/projects' || event.path == '/api/chat/unread') {
         if (!mounted) return;
         setState(() => _retrying = event.attempt);
@@ -53,29 +61,89 @@ class _ProjectListScreenState extends State<ProjectListScreen> {
     });
   }
 
-  /// 刷新项目列表：网络失败时回落本地缓存
-  void _refreshProjects() {
+  @override
+  void dispose() {
+    _slowTimer?.cancel();
+    _retrySub?.cancel();
+    super.dispose();
+  }
+
+  /// 发起一次项目列表加载
+  void _startLoad() {
+    _offlineAsked = false;
+    _loadDone = false;
+    final gen = ++_loadGen;
+    _slowTimer?.cancel();
     setState(() {
-      _projectsFuture = _loadProjectsWithCache().whenComplete(() {
-        if (mounted) setState(() {});
+      _projectsFuture = _runLoad(gen).whenComplete(() {
+        _loadDone = true;
+        _slowTimer?.cancel();
+        if (mounted && gen == _loadGen) setState(() {});
       });
+    });
+    // 不管 WiFi 还是 4G/5G：2.5 秒数据还没回来且本地有缓存，就主动询问，
+    // 不必等满 8 秒连接超时 + 3 次重试
+    _slowTimer = Timer(const Duration(milliseconds: 2500), () {
+      if (mounted && gen == _loadGen && !_loadDone) {
+        _maybePromptOffline();
+      }
     });
   }
 
+  /// 刷新项目列表：网络失败时回落本地缓存
+  void _refreshProjects() => _startLoad();
+
+  Future<List<Project>> _runLoad(int gen) async {
+    // 设备完全无网（飞行模式/无 WiFi/无流量）：一个请求都不发，直接读缓存秒进
+    if (!await isDeviceOnline()) {
+      final cached = await _readProjectCache();
+      if (cached != null) {
+        if (gen == _loadGen) {
+          _offlineMode = true;
+          _cacheTime = cached.time;
+        }
+        return cached.list;
+      }
+      // 没有缓存时继续走网络，让页面展示正常的错误+重试按钮
+    }
+    return _loadProjectsWithCache(gen);
+  }
+
   /// 网络成功 → 更新缓存并返回；失败 → 读缓存（按登录用户隔离）；无缓存则抛出原错误
-  Future<List<Project>> _loadProjectsWithCache() async {
+  Future<List<Project>> _loadProjectsWithCache(int gen) async {
     try {
       final list = await ApiService().getProjects();
       await _saveProjectCache(list);
-      _offlineMode = false;
+      if (gen == _loadGen) _offlineMode = false;
       return list;
     } catch (e) {
       final cached = await _readProjectCache();
       if (cached == null) rethrow;
-      _offlineMode = true;
-      _cacheTime = cached.time;
+      if (gen == _loadGen) {
+        _offlineMode = true;
+        _cacheTime = cached.time;
+      }
       return cached.list;
     }
+  }
+
+  /// 第 1 次重试时询问用户是否立刻进入离线模式（有缓存才问）
+  Future<void> _maybePromptOffline() async {
+    if (_offlineAsked || !mounted) return;
+    final cached = await _readProjectCache();
+    if (!mounted || cached == null) return;
+    _offlineAsked = true;
+    final enter = await showOfflineModeDialog(context);
+    if (!mounted || !enter) return;
+    _enterOffline(cached);
+  }
+
+  /// 立即切到缓存视图，并不再让在途的网络请求结果覆盖界面
+  void _enterOffline(({List<Project> list, DateTime time}) cached) {
+    _loadGen++;
+    _offlineMode = true;
+    _cacheTime = cached.time;
+    setState(() => _projectsFuture = Future.value(cached.list));
   }
 
   Future<void> _saveProjectCache(List<Project> list) async {

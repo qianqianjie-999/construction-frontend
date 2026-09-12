@@ -26,6 +26,7 @@ import '../widgets/full_screen_image_viewer.dart';
 import '../widgets/message_bubble.dart';
 import '../widgets/pending_message_bubble.dart';
 import '../utils/geo_utils.dart';
+import '../utils/offline_helper.dart';
 
 /// 列表显示项：日期头 或 消息
 class _DisplayItem {
@@ -78,6 +79,7 @@ class _ChatScreenState extends State<ChatScreen> {
   final List<ChatMessage> _messages = [];
   bool _loading = false;
   bool _hasMore = true;
+  bool _historyLoaded = false; // 断网进页时历史未拉取，重连后补拉
   bool _uploading = false;
   bool _locating = false;
   int? _oldestId;
@@ -132,7 +134,12 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   Future<void> _init() async {
-    await _loadHistory();
+    // 设备无网时不发历史请求（否则要等满 3 次重试），秒进页面；
+    // socket 重连成功后再自动补拉历史
+    if (await isDeviceOnline()) {
+      await _loadHistory(refresh: true);
+      _historyLoaded = true;
+    }
     _setupSocket();
     if (widget.initialLogId != null) {
       SocketService().sendLogCard(widget.project.id, widget.initialLogId!);
@@ -170,6 +177,7 @@ class _ChatScreenState extends State<ChatScreen> {
       } else {
         if (refresh) {
           _messages.clear();
+          _messages.addAll(msgs);
         } else {
           // 滚动位置保持
           final oldScrollOffset = _scrollController.hasClients ? _scrollController.offset : 0;
@@ -210,6 +218,11 @@ class _ChatScreenState extends State<ChatScreen> {
       if (!mounted) return;
       setState(() => _connected = true);
       socket.joinProject(widget.project.id);
+      // 断网进页时历史未拉取，连上后自动补拉
+      if (!_historyLoaded) {
+        _historyLoaded = true;
+        _loadHistory(refresh: true);
+      }
     });
     socket.onDisconnect(() {
       if (!mounted) return;
